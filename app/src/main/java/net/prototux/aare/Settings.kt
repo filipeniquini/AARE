@@ -39,6 +39,11 @@ class Settings(context: Context) {
         get() = prefs.getInt("max_video_height", 1080)
         set(v) = prefs.edit { putInt("max_video_height", v) }
 
+    /** Size of the car screen's interface, in percent of what the head unit asks for (see CarSession.scaledDensity). */
+    var uiScalePercent: Int
+        get() = prefs.getInt(KEY_UI_SCALE, 100)
+        set(v) = prefs.edit { putInt(KEY_UI_SCALE, v) }
+
     /** Prefer 60 fps configurations when the head unit offers them. */
     var prefer60fps: Boolean
         get() = prefs.getBoolean("prefer_60fps", true)
@@ -199,6 +204,10 @@ class Settings(context: Context) {
         const val THEME_LIGHT = "light"
         const val STYLE_AUTO = "auto"
         const val STYLE_CARPLAY = "carplay"
+        const val STYLE_GTS = "gts"
+        const val KEY_UI_SCALE = "ui_scale_percent"
+        /** The sizes offered for the car screen's interface, largest first. */
+        val UI_SCALES = listOf(100, 90, 80, 70)
         const val WALLPAPER_CUSTOM = "custom"
         /** The user's wallpaper photo, in the app's files. */
         const val WALLPAPER_FILE = "wallpaper.jpg"

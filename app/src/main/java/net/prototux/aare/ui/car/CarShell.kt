@@ -74,6 +74,7 @@ import net.prototux.aare.R
 import net.prototux.aare.notify.PhoneGuidance
 import net.prototux.aare.ui.theme.CarTheme
 import net.prototux.aare.ui.theme.LocalCarDimens
+import net.prototux.aare.ui.theme.LocalGtsStyle
 
 /**
  * Root of the car screen: a rail on the driver's side and the content area.
@@ -367,6 +368,7 @@ private fun Card(modifier: Modifier, onClick: (() -> Unit)? = null, content: @Co
         modifier
             .clip(RoundedCornerShape(r))
             .background(MaterialTheme.colorScheme.surfaceContainer)
+            .let { if (LocalGtsStyle.current) it.honeycomb(MaterialTheme.colorScheme.surfaceContainerHigh) else it }
             .let { if (onClick != null) it.carFocusHighlight(RoundedCornerShape(r)).clickable(onClick = onClick) else it },
     ) { content() }
 }

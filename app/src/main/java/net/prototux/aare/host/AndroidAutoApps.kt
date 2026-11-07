@@ -31,6 +31,9 @@ object AndroidAutoApps {
     private const val META_CAR_APPLICATION = "com.google.android.gms.car.application"
     private val MESSAGING_USES = setOf("notification", "sms")
 
+    /** Declare `notification` for their own alerts, without being messaging apps. */
+    private val NOT_MESSAGING = setOf("com.google.android.apps.maps")
+
     /**
      * Messaging apps, as Android Auto finds them: apps declaring `<uses name="notification"/>`
      * (or `sms`), plus the default SMS app.
@@ -39,7 +42,7 @@ object AndroidAutoApps {
         val pm = context.packageManager
         val sms = runCatching { Telephony.Sms.getDefaultSmsPackage(context) }.getOrNull()
         return declaring(context)
-            .filter { (app, uses) -> uses.any { it in MESSAGING_USES } || app.packageName == sms }
+            .filter { (app, uses) -> app.packageName !in NOT_MESSAGING && uses.any { it in MESSAGING_USES } || app.packageName == sms }
             .map { (app, _) -> PhoneApp(app.packageName, app.loadLabel(pm).toString(), runCatching { app.loadIcon(pm).toBitmap(iconSizePx, iconSizePx) }.getOrNull()) }
             .let { found ->
                 if (sms == null || found.any { it.packageName == sms }) found
@@ -67,7 +70,7 @@ object AndroidAutoApps {
         val pm = context.packageManager
         val shown = carApps.toSet() + mediaPackages(pm)
         return declaring(context)
-            .filter { (app, uses) -> app.packageName !in shown && uses.none { it in MESSAGING_USES } }
+            .filter { (app, uses) -> app.packageName !in shown && (app.packageName in NOT_MESSAGING || uses.none { it in MESSAGING_USES }) }
             .map { (app, uses) ->
                 UnsupportedCarApp(
                     packageName = app.packageName,

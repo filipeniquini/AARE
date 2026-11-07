@@ -31,9 +31,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +47,9 @@ import androidx.compose.ui.unit.dp
 import net.prototux.aare.R
 import net.prototux.aare.car.NextEvent
 import net.prototux.aare.car.Weather
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** WMO weather codes (Open-Meteo) to an icon. */
 private fun weatherIcon(w: Weather): ImageVector = when (w.code) {
@@ -108,6 +115,38 @@ internal fun Wallpaper(ui: CarUiState, modifier: Modifier) {
         ui.wallpaper == net.prototux.aare.Settings.WALLPAPER_CUSTOM && image != null ->
             Image(image.asImageBitmap(), null, modifier, contentScale = ContentScale.Crop)
         else -> WALLPAPERS[ui.wallpaper]?.let { colors -> Box(modifier.background(Brush.linearGradient(colors))) }
+    }
+}
+
+/**
+ * A dark honeycomb, like the GTS's front grille, drawn inside a card. Not behind the whole
+ * screen: the opaque cards would leave only slivers of it in the gaps, which read as dashed lines.
+ */
+internal fun Modifier.honeycomb(line: Color): Modifier = drawBehind {
+    // About the size the full-screen honeycomb had on a 720p car screen.
+    val radius = 28.dp.toPx()
+    val hexagon = Path().apply {
+        for (i in 0 until 6) {
+            val angle = Math.toRadians(60.0 * i - 30.0)
+            val x = (radius * cos(angle)).toFloat()
+            val y = (radius * sin(angle)).toFloat()
+            if (i == 0) moveTo(x, y) else lineTo(x, y)
+        }
+        close()
+    }
+    val stroke = Stroke(width = radius * 0.12f)
+    val stepX = sqrt(3f) * radius
+    val stepY = 1.5f * radius
+    var row = 0
+    var y = 0f
+    while (y < size.height + radius) {
+        var x = if (row % 2 == 0) 0f else stepX / 2f
+        while (x < size.width + radius) {
+            translate(x, y) { drawPath(hexagon, line, style = stroke) }
+            x += stepX
+        }
+        y += stepY
+        row++
     }
 }
 

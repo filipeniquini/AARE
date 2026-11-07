@@ -61,7 +61,7 @@
     <string name="setup_toggle_60fps_title">Prefer 60 fps</string>
     <string name="setup_toggle_60fps_subtitle">Smoother when the car supports it</string>
     <string name="setup_choice_max_resolution">Maximum resolution</string>
-    <string name="setup_hint_lower_resolution">Lower uses less battery and bandwidth.</string>
+    <string name="setup_hint_lower_resolution">Lower uses less battery and bandwidth. Takes effect the next time the car connects.</string>
     <string name="setup_section_your_cars">Your cars</string>
     <string name="setup_cars_empty">Cars appear here after the first connection.</string>
     <string name="setup_car_last_connected">Last connected %1$s</string>
@@ -114,6 +114,8 @@
     <string name="setup_section_connection_log">Connection log</string>
     <string name="setup_about_text">AARE %1$s · GPL-3.0-or-later · Not affiliated with Google. Android Auto is a trademark of Google LLC.</string>
     <string name="setup_choice_style">Style</string>
+    <string name="setup_choice_ui_size">Interface size</string>
+    <string name="setup_style_gts" translatable="false">GTS</string>
     <string name="setup_style_android_auto">Android Auto</string>
     <string name="setup_style_carplay">CarPlay</string>
     <string name="setup_switch_dark_bar">Dark bar, even with day colors</string>
@@ -258,6 +260,8 @@
     <string name="media_action_next">Next</string>
     <string name="media_playing_from">Playing from %1$s</string>
     <string name="media_connecting_to">Connecting to %1$s</string>
+    <string name="media_refused_hint">%1$s doesn\'t allow browsing here. Choose your music on the phone.</string>
+    <string name="media_refused_nothing">Start something in %1$s on the phone</string>
     <string name="media_queue_title">Queue</string>
     <string name="media_search_app">Search %1$s</string>
     <string name="media_action_search">Search</string>

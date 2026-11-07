@@ -69,7 +69,8 @@ internal class MediaConnection(
     sealed interface Status {
         data object Connecting : Status
         data class Ready(val root: MediaItem, val hints: StyleHints, val searchSupported: Boolean) : Status
-        data class Failed(val error: MediaError) : Status
+        /** [refused]: the app rejected AARE (caller validation), so only its phone session is left. */
+        data class Failed(val error: MediaError, val refused: Boolean = false) : Status
     }
 
     override val key = "browser:${app.packageName}"
@@ -159,7 +160,8 @@ internal class MediaConnection(
             // SecurityException: the app rejected us (caller validation); not worth retrying alone
             Log.w(TAG, "connect ${app.packageName} failed: $e")
             MediaController.releaseFuture(future)
-            fail(if (e is SecurityException) "${app.label} did not accept the connection" else "Could not connect to ${app.label}")
+            if (e is SecurityException) _status.value = Status.Failed(MediaError("${app.label} did not accept the connection"), refused = true)
+            else fail("Could not connect to ${app.label}")
             return
         }
         if (released) {

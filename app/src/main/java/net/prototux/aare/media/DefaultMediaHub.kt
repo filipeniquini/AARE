@@ -54,6 +54,9 @@ class DefaultMediaHub(context: Context, scope: CoroutineScope) : MediaHub {
     /** False while we lack notification access, i.e. only our own connection is tracked. */
     val sessionAccess: StateFlow<Boolean> = tracker.available
 
+    /** The phone's active media sessions: all that's left of an app that refuses our connection. */
+    internal val sessions: StateFlow<List<SessionSource>> = tracker.sources
+
     override val playback: StateFlow<PlaybackInfo?> = _playback.asStateFlow()
 
     init {

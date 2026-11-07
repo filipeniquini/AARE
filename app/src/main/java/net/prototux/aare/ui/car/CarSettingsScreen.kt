@@ -45,6 +45,7 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
     var audio by remember { mutableStateOf(settings.carAudio) }
     var darkBar by remember { mutableStateOf(settings.darkBar) }
     var passenger by remember { mutableStateOf(settings.ignoreDriving) }
+    var uiScale by remember { mutableStateOf(settings.uiScalePercent) }
     LazyColumn(
         modifier.background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(horizontal = 32.dp, vertical = 24.dp),
@@ -62,8 +63,13 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
             }
         }
         item {
-            Choice(stringResource(R.string.setup_choice_style), listOf(Settings.STYLE_AUTO to stringResource(R.string.setup_style_android_auto), Settings.STYLE_CARPLAY to stringResource(R.string.setup_style_carplay)), style) {
+            Choice(stringResource(R.string.setup_choice_style), listOf(Settings.STYLE_AUTO to stringResource(R.string.setup_style_android_auto), Settings.STYLE_GTS to stringResource(R.string.setup_style_gts), Settings.STYLE_CARPLAY to stringResource(R.string.setup_style_carplay)), style) {
                 style = it; settings.carStyle = it
+            }
+        }
+        item {
+            Choice(stringResource(R.string.setup_choice_ui_size), Settings.UI_SCALES.map { "$it" to "$it%" }, "$uiScale") {
+                uiScale = it.toInt(); settings.uiScalePercent = uiScale
             }
         }
         item { SwitchRow(stringResource(R.string.setup_switch_dark_bar), darkBar) { darkBar = it; settings.darkBar = it } }

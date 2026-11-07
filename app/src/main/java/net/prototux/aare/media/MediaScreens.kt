@@ -78,6 +78,10 @@ internal fun MediaAppScreen(hub: DefaultMediaHub, app: MediaApp, driving: Boolea
     val ui = remember(connection) { hub.uiFor(connection) }
     val status by connection.status.collectAsState()
     val source by connection.state.collectAsState()
+    if ((status as? MediaConnection.Status.Failed)?.refused == true) {
+        RefusedAppScreen(hub, app, modifier)
+        return
+    }
 
     LaunchedEffect(status) { (status as? MediaConnection.Status.Ready)?.let(ui::onReady) }
     // subscribe to the levels the user can see, so lists refresh when the app changes them
@@ -106,6 +110,32 @@ internal fun MediaAppScreen(hub: DefaultMediaHub, app: MediaApp, driving: Boolea
                     MediaView.SEARCH -> SearchView(ui, driving)
                 }
             }
+        }
+    }
+}
+
+/**
+ * An app that accepts only Google's host (Spotify, YouTube Music): no browsing here, but what it
+ * plays is still a phone session, so now playing and the transport buttons work through that.
+ */
+@Composable
+private fun RefusedAppScreen(hub: DefaultMediaHub, app: MediaApp, modifier: Modifier) {
+    val sessions by hub.sessions.collectAsState()
+    val session = sessions.firstOrNull { it.packageName == app.packageName }
+    Column(modifier.background(MaterialTheme.colorScheme.background)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppBadge(app, 48)
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Title(app.label)
+                Text(stringResource(R.string.media_refused_hint, app.label), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            val state = session?.state?.collectAsState()?.value
+            if (session != null && state?.info != null) NowPlayingView(hub, session, state) {}
+            else Placeholder(stringResource(R.string.media_refused_nothing, app.label), loading = false, icon = Icons.Rounded.MusicNote)
         }
     }
 }

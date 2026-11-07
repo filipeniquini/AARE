@@ -61,7 +61,7 @@
     <string name="setup_toggle_60fps_title">Preferir 60 fps</string>
     <string name="setup_toggle_60fps_subtitle">Mais suave quando o carro o suporta</string>
     <string name="setup_choice_max_resolution">Resolução máxima</string>
-    <string name="setup_hint_lower_resolution">Uma resolução mais baixa consome menos bateria e dados.</string>
+    <string name="setup_hint_lower_resolution">Uma resolução mais baixa consome menos bateria e dados. Vale a partir da próxima ligação ao carro.</string>
     <string name="setup_section_your_cars">Os seus carros</string>
     <string name="setup_cars_empty">Os carros aparecem aqui após a primeira ligação.</string>
     <string name="setup_car_last_connected">Última ligação: %1$s</string>
@@ -114,6 +114,7 @@
     <string name="setup_section_connection_log">Registo de ligação</string>
     <string name="setup_about_text">AARE %1$s · GPL-3.0-or-later · Não afiliada com a Google. Android Auto é uma marca comercial da Google LLC.</string>
     <string name="setup_choice_style">Estilo</string>
+    <string name="setup_choice_ui_size">Tamanho da interface</string>
     <string name="setup_style_android_auto">Android Auto</string>
     <string name="setup_style_carplay">CarPlay</string>
     <string name="setup_switch_dark_bar">Barra escura, mesmo com as cores de dia</string>
@@ -258,6 +259,8 @@
     <string name="media_action_next">Seguinte</string>
     <string name="media_playing_from">A reproduzir de %1$s</string>
     <string name="media_connecting_to">A ligar a %1$s</string>
+    <string name="media_refused_hint">O %1$s não permite navegar aqui. Escolha a música no telemóvel.</string>
+    <string name="media_refused_nothing">Inicie algo no %1$s no telemóvel</string>
     <string name="media_queue_title">Fila</string>
     <string name="media_search_app">Pesquisar %1$s</string>
     <string name="media_action_search">Pesquisar</string>

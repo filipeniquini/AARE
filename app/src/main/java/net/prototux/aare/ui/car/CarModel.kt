@@ -115,6 +115,8 @@ class CarUiState {
     var darkBar by mutableStateOf(false)
     /** The CarPlay-style layout (an easter egg, *Settings > Style*). */
     var carPlayStyle by mutableStateOf(false)
+    /** The GTS look: always dark, red accent, Barlow and a honeycomb behind the dashboard (*Settings > Style*). */
+    var gtsStyle by mutableStateOf(false)
     /** The rail runs along the bottom instead of a side. */
     var railBottom by mutableStateOf(false)
 

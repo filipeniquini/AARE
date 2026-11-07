@@ -12,10 +12,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import net.prototux.aare.R
 
 /**
  * The in-car look: calm dark surfaces, one warm accent, big type and big targets.
@@ -89,6 +92,59 @@ private val DayColors: ColorScheme = lightColorScheme(
     outlineVariant = Color(0xFFBEC9C6),
 )
 
+/** The GTS style: always dark, graphite surfaces and one red accent, like the car's own instruments. */
+private val GtsColors: ColorScheme = darkColorScheme(
+    primary = Color(0xFFE4002B),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF4A0A18),
+    onPrimaryContainer = Color(0xFFFFD9DD),
+    secondary = Color(0xFFB8BCC4),
+    onSecondary = Color(0xFF1E2026),
+    secondaryContainer = Color(0xFF262930),
+    onSecondaryContainer = Color(0xFFE6E7EB),
+    tertiary = Color(0xFFFFB86B),
+    onTertiary = Color(0xFF2E1500),
+    background = Color(0xFF0C0D10),
+    onBackground = Color(0xFFF0F1F3),
+    surface = Color(0xFF0C0D10),
+    onSurface = Color(0xFFF0F1F3),
+    surfaceVariant = Color(0xFF1C1E24),
+    onSurfaceVariant = Color(0xFFA8ADB6),
+    surfaceContainerLowest = Color(0xFF07080A),
+    surfaceContainerLow = Color(0xFF121318),
+    surfaceContainer = Color(0xFF16181D),
+    surfaceContainerHigh = Color(0xFF1C1E24),
+    surfaceContainerHighest = Color(0xFF262930),
+    outline = Color(0xFF50545C),
+    outlineVariant = Color(0xFF2A2D34),
+    error = Color(0xFFFF8A80),
+)
+
+/** Barlow Semi Condensed (SIL OFL, see assets/fonts/OFL-Barlow.txt). The files are italic already. */
+private val Barlow = FontFamily(
+    Font(R.font.barlow_semi_condensed_medium_italic, FontWeight.Normal),
+    Font(R.font.barlow_semi_condensed_medium_italic, FontWeight.Medium),
+    Font(R.font.barlow_semi_condensed_bold_italic, FontWeight.Bold),
+)
+
+private fun Typography.withFamily(family: FontFamily) = Typography(
+    displayLarge = displayLarge.copy(fontFamily = family),
+    displayMedium = displayMedium.copy(fontFamily = family),
+    displaySmall = displaySmall.copy(fontFamily = family),
+    headlineLarge = headlineLarge.copy(fontFamily = family),
+    headlineMedium = headlineMedium.copy(fontFamily = family),
+    headlineSmall = headlineSmall.copy(fontFamily = family),
+    titleLarge = titleLarge.copy(fontFamily = family),
+    titleMedium = titleMedium.copy(fontFamily = family),
+    titleSmall = titleSmall.copy(fontFamily = family),
+    bodyLarge = bodyLarge.copy(fontFamily = family),
+    bodyMedium = bodyMedium.copy(fontFamily = family),
+    bodySmall = bodySmall.copy(fontFamily = family),
+    labelLarge = labelLarge.copy(fontFamily = family),
+    labelMedium = labelMedium.copy(fontFamily = family),
+    labelSmall = labelSmall.copy(fontFamily = family),
+)
+
 private val CarType = Typography(
     displaySmall = TextStyle(fontSize = 44.sp, lineHeight = 52.sp, fontWeight = FontWeight.Medium),
     headlineMedium = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium),
@@ -101,6 +157,8 @@ private val CarType = Typography(
     labelMedium = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium),
 )
 
+private val GtsType = CarType.withFamily(Barlow)
+
 private val CarShapes = Shapes(
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(20.dp),
@@ -108,14 +166,18 @@ private val CarShapes = Shapes(
     extraLarge = RoundedCornerShape(36.dp),
 )
 
+/** Whether the car screen uses the GTS style (its cards get the honeycomb). */
+val LocalGtsStyle = staticCompositionLocalOf { false }
+
 @Composable
-fun CarTheme(night: Boolean, content: @Composable () -> Unit) {
+fun CarTheme(night: Boolean, gts: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (night) NightColors else DayColors,
-        typography = CarType,
+        colorScheme = if (gts) GtsColors else if (night) NightColors else DayColors,
+        typography = if (gts) GtsType else CarType,
         shapes = CarShapes,
-        content = content,
-    )
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(LocalGtsStyle provides gts, content = content)
+    }
 }
 
 /** Phone UI theme: same palette, normal phone type scale. */

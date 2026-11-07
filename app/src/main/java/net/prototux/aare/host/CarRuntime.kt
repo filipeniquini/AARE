@@ -249,7 +249,8 @@ class CarRuntime(
 
     /** Applies the theme and bar position settings (also when they change during a drive). */
     private fun applyScreenSettings() {
-        val night = when (settings.carTheme) {
+        val gts = settings.carStyle == Settings.STYLE_GTS
+        val night = if (gts) true else when (settings.carTheme) {
             Settings.THEME_DARK -> true
             Settings.THEME_LIGHT -> false
             else -> carNight ?: true
@@ -262,6 +263,7 @@ class CarRuntime(
         // Passenger mode lifts the driving restrictions (keyboard, list lengths, phone screen).
         ui.drivingRestricted = carDriving && !settings.ignoreDriving
         ui.carPlayStyle = settings.carStyle == Settings.STYLE_CARPLAY
+        ui.gtsStyle = gts
         ui.darkBar = settings.darkBar
         val wallpaper = settings.wallpaper
         if (wallpaper != ui.wallpaper || (wallpaper == Settings.WALLPAPER_CUSTOM && ui.wallpaperImage == null)) {
@@ -356,10 +358,13 @@ class CarRuntime(
         val assistantPkg = assistantPackage()
         carApps.clear()
         val entries = ArrayList<CarAppEntry>()
+        val mediaPackages = media.apps.value.mapTo(HashSet()) { it.packageName }
         for (app in found) {
             val id = carId(app)
             carApps[id] = app
             if (app.packageName in hidden) continue
+            // Music apps' car UIs tend to accept only Google's host; their media service works here.
+            if (!app.isNavigation && app.packageName != assistantPkg && app.packageName in mediaPackages) continue
             val kind = when {
                 app.isNavigation -> CarAppKind.NAVIGATION
                 app.packageName == assistantPkg -> CarAppKind.ASSISTANT
@@ -368,7 +373,7 @@ class CarRuntime(
             entries += CarAppEntry(id, app.packageName, app.label, app.icon, kind)
         }
         for (m in media.apps.value) {
-            // An app that has a car UI of its own is shown once, as that.
+            // A navigation app or the assistant with a car UI of its own is shown once, as that.
             if (m.packageName in hidden || entries.any { it.packageName == m.packageName }) continue
             entries += CarAppEntry(mediaId(m.packageName), m.packageName, m.label, m.icon, CarAppKind.MEDIA)
         }
@@ -616,7 +621,7 @@ class CarRuntime(
     @Composable
     fun Root(modifier: Modifier = Modifier) {
         val mediaApps by media.apps.collectAsState()
-        CarTheme(night = ui.night) {
+        CarTheme(night = ui.night, gts = ui.gtsStyle) {
             CompositionLocalProvider(LocalCarDimens provides LocalCarDimens.current) {
                 CarShell(
                     state = ui,

@@ -526,6 +526,8 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var passenger by remember { mutableStateOf(settings.ignoreDriving) }
     var weather by remember { mutableStateOf(settings.showWeather) }
     var wallpaper by remember { mutableStateOf(settings.wallpaper) }
+    var uiScale by remember { mutableIntStateOf(settings.uiScalePercent) }
+    var style by remember { mutableStateOf(settings.carStyle) }
     val scope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -551,6 +553,14 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
                 rail = it; settings.railPosition = it
             }
             Toggle(stringResource(R.string.setup_toggle_dark_bar_title), stringResource(R.string.setup_toggle_dark_bar_subtitle), darkBar) { darkBar = it; settings.darkBar = it }
+            Spacer(Modifier.height(12.dp))
+            Choices(stringResource(R.string.setup_choice_ui_size), Settings.UI_SCALES.map { "$it" to "$it%" }, "$uiScale") {
+                uiScale = it.toInt(); settings.uiScalePercent = uiScale
+            }
+            Spacer(Modifier.height(12.dp))
+            Choices(stringResource(R.string.setup_choice_style), listOf(Settings.STYLE_AUTO to stringResource(R.string.setup_style_android_auto), Settings.STYLE_GTS to stringResource(R.string.setup_style_gts), Settings.STYLE_CARPLAY to stringResource(R.string.setup_style_carplay)), style) {
+                style = it; settings.carStyle = it
+            }
         }
         Section(stringResource(R.string.setup_section_dashboard)) {
             Choices(stringResource(R.string.setup_choice_wallpaper), listOf("none" to stringResource(R.string.setup_wallpaper_none)) + WALLPAPER_NAMES.map { it to it.replaceFirstChar(Char::uppercase) } +
@@ -683,12 +693,14 @@ private fun AppsCard(settings: Settings) {
     val ctx = LocalContext.current
     var hidden by remember { mutableStateOf(settings.hiddenApps) }
     var phoneScreen by remember { mutableStateOf(settings.phoneScreen) }
-    // Same rules as the car's launcher (CarRuntime.applyApps): an app with a car app shows once, as that.
+    // Same rules as the car's launcher (CarRuntime.applyApps): each app shows once, music apps as media apps.
     val lists by produceState<LauncherLists?>(null) {
         value = withContext(Dispatchers.IO) {
-            val car = CarAppCatalog.query(ctx)
+            val allMedia = AndroidAutoApps.mediaApps(ctx)
+            val mediaPkgs = allMedia.mapTo(HashSet()) { it.packageName }
+            val car = CarAppCatalog.query(ctx).filter { it.isNavigation || it.packageName == settings.assistantPackage || it.packageName !in mediaPkgs }
             val carPkgs = car.mapTo(HashSet()) { it.packageName }
-            val media = AndroidAutoApps.mediaApps(ctx).filter { it.packageName !in carPkgs }
+            val media = allMedia.filter { it.packageName !in carPkgs }
             val shown = carPkgs + media.map { it.packageName }
             LauncherLists(car, media, AndroidAutoApps.messagingApps(ctx).filter { it.packageName !in shown })
         }
