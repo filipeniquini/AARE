@@ -51,6 +51,9 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     @Volatile var ackless = false
         private set
     @Volatile private var ackSeen = false
+    /** Acks the head unit has sent on this channel. */
+    @Volatile var acksReceived = 0L
+        private set
     private val sentSinceStart = AtomicInteger(0)
 
     override fun onOpened() {
@@ -69,6 +72,7 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
             MediaMsg.ACK -> {
                 val ack = Ack.parseFrom(msg.bodyBytes())
                 ackSeen = true
+                acksReceived++
                 val n = if (ack.hasAck()) ack.ack else 1
                 // Never go negative: some head units ack frames sent before a restart.
                 unacked.updateAndGet { maxOf(0, it - n) }
@@ -178,8 +182,11 @@ class VideoChannel(
     val configs: List<VideoConfiguration> = service.mediaSinkService.videoConfigsList
     @Volatile var chosen: VideoConfiguration? = null
         private set
+    private var chosenIndex = 0
     @Volatile var focused = false
         private set
+    /** The head unit has said something about focus on this stream, granted or not. */
+    @Volatile private var focusAnswered = false
 
     private class Pending(val buf: ByteArray, val offset: Int, val length: Int, val ptsUs: Long, val key: Boolean, val recycle: (ByteArray) -> Unit)
     private val pending = ArrayDeque<Pending>()
@@ -210,10 +217,11 @@ class VideoChannel(
         if (!ready) return
         val index = listener.chooseConfiguration(configs, configIndices).coerceIn(0, configs.size - 1)
         chosen = configs[index]
+        chosenIndex = index
+        focusAnswered = false
         synchronized(lock) { sentAt.clear() }
-        startStream(index)
-        listener.onVideoStart(index, configs[index])
-        // Ask to be shown; head units answer with a focus notification.
+        // Ask to be shown; head units answer with a focus notification. The stream starts then, as
+        // with Android Auto: a VW MIB head unit shows nothing and acks nothing when it starts earlier.
         send(MediaMsg.VIDEO_FOCUS_REQUEST, VideoFocusRequestNotification.newBuilder()
             .setMode(VideoFocusMode.VIDEO_FOCUS_PROJECTED).setReason(VideoFocusReason.UNKNOWN).build())
     }
@@ -248,9 +256,27 @@ class VideoChannel(
         }
     }
 
+    /**
+     * For a head unit that never answers the focus request: starts sending as if it had been
+     * granted, since it may be waiting for video before it shows anything. An explicit answer,
+     * even a refusal, always wins. Returns whether it applied.
+     */
+    fun assumeProjectedIfUnanswered(): Boolean {
+        if (focusAnswered || chosen == null) return false
+        setFocus(true)
+        return true
+    }
+
+    @Synchronized
     private fun setFocus(projected: Boolean) {
+        focusAnswered = true
         val changed = projected != focused
         focused = projected
+        if (projected && !started) {
+            val config = chosen ?: return
+            startStream(chosenIndex)
+            listener.onVideoStart(chosenIndex, config)
+        }
         if (projected) {
             synchronized(lock) { needKeyFrame = true; while (pending.isNotEmpty()) pending.removeFirst().let { it.recycle(it.buf) } }
             // resend codec config: some head units reset their decoder when focus returns
@@ -418,9 +444,8 @@ class MicrophoneChannel(service: Service, private val listener: Listener) :
     @Volatile private var requested = false
     private var sessionId = 0
 
-    override fun onOpened() {
-        send(MediaMsg.SETUP, Setup.newBuilder().setType(MediaCodecType.MEDIA_CODEC_AUDIO_PCM).build())
-    }
+    // No SETUP on open: Android Auto only sends MICROPHONE_REQUEST on this channel, and a VW MIB
+    // (Visteon VW Play) answers a SETUP here with "unexpected message" (0x00FF), then shows no video.
 
     fun openMic() {
         requested = true

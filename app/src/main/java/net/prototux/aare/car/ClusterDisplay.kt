@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import aap_protobuf.service.media.sink.message.VideoConfigurationOuterClass.VideoConfiguration
-import aap_protobuf.service.media.sink.message.VideoFrameRateTypeOuterClass.VideoFrameRateType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,7 +57,7 @@ class ClusterDisplay(private val context: Context, private val runtime: CarRunti
         stop()
         val ch = channel ?: return
         val (w, h) = CarSession.resolution(config.codecResolution)
-        val fps = if (config.frameRate == VideoFrameRateType.VIDEO_FPS_60) 60 else 30
+        val fps = CarSession.fpsOf(config)
         val dpi = if (config.density > 0) config.density else CarSession.defaultDensity(minOf(w, h))
         Log.i(TAG, "cluster video ${w}x$h@$fps ${dpi}dpi")
         val enc = VideoEncoder(w, h, fps, sink = object : VideoEncoder.Sink {

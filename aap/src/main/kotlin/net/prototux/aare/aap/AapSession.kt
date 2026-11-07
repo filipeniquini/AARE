@@ -243,11 +243,29 @@ class AapSession(
                 val m = queue.poll(500, TimeUnit.MILLISECONDS) ?: continue
                 // Never downgrade: a message flagged encrypted while TLS is down throws (ends the session).
                 writer.write(m.channel, m.control, m.encrypted, m.plain, m.length)
+                logSent(m)
                 m.onSent?.invoke()
             }
         } catch (e: Throwable) {
             fail("write failed", e)
         }
+    }
+
+    /** How many of each message went out, by channel and id (writer thread only). */
+    private val sentCounts = HashMap<Pair<Int, Int>, Int>()
+
+    /**
+     * Logs the first messages of each kind as they go on the wire, in that order: what a head unit
+     * that shows nothing was really sent. Video gets a few more, with their first bytes.
+     */
+    private fun logSent(m: Outgoing) {
+        if (m.channel == 0 || m.length < 2) return
+        val name = channels[m.channel]?.name ?: return
+        val id = (m.plain[0].toInt() and 0xFF shl 8) or (m.plain[1].toInt() and 0xFF)
+        val count = sentCounts.merge(m.channel to id, 1, Int::plus)!!
+        if (count > if (name == "video") SENT_VIDEO_TO_LOG else 1) return
+        val head = if (name == "video") ": " + (0 until minOf(m.length, 24)).joinToString("") { "%02x".format(m.plain[it]) } else ""
+        log.d("sent: channel ${m.channel} ($name) id 0x${id.toString(16)}, ${m.length} bytes$head")
     }
 
     private fun readLoop() {
@@ -284,7 +302,7 @@ class AapSession(
                     val status = ChannelOpenResponse.parseFrom(msg.bodyBytes()).status
                     if (status == MessageStatus.STATUS_SUCCESS) {
                         ch.opened = true
-                        log.i("channel ${ch.id} (${ch.name}) open")
+                        log.d("channel ${ch.id} (${ch.name}) open")
                         runHandler(ch) { ch.onOpened() }
                     } else {
                         log.w("head unit refused channel ${ch.id} (${ch.name}): $status")
@@ -300,8 +318,17 @@ class AapSession(
             }
             return
         }
+        if (msg.id == UNEXPECTED_MESSAGE) {
+            // The car's way of saying we sent something it didn't expect on this channel: keep every one.
+            log.w("car says it got an unexpected message on channel ${ch.id} (${ch.name})")
+        } else if (carMessagesSeen.add(msg.channel to msg.id)) {
+            log.d("car message: channel ${ch.id} (${ch.name}) id 0x${msg.id.toString(16)}, first of its kind")
+        }
         runHandler(ch) { ch.onMessage(msg) }
     }
+
+    /** Channel and message id of what the car has sent, to log each kind once (reader thread only). */
+    private val carMessagesSeen = HashSet<Pair<Int, Int>>()
 
     private inline fun runHandler(ch: ServiceChannel, block: () -> Unit) {
         try {
@@ -533,6 +560,9 @@ class AapSession(
     companion object {
         const val PROTOCOL_MAJOR = 1
         const val PROTOCOL_MINOR = 7
+        private const val SENT_VIDEO_TO_LOG = 8
+        /** What a head unit sends back on a channel when the phone sent it a message it didn't expect. */
+        private const val UNEXPECTED_MESSAGE = 0x00FF
 
         private fun now() = System.nanoTime() / 1_000_000
 

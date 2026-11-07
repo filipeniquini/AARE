@@ -41,6 +41,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import android.content.SharedPreferences
 import net.prototux.aare.Settings
 import net.prototux.aare.aap.AapLog
 import net.prototux.aare.aap.AapSession
@@ -110,7 +111,7 @@ class CarSession(
     private val aap = AapSession(transport, identity, PhoneDescription(
         deviceName = deviceName(), label = "Android", instanceId = settings.instanceId,
         smallIcon = icon(32), mediumIcon = icon(64), largeIcon = icon(128),
-    ), this, net.prototux.aare.AndroidAapLog, SessionOptions(sendPings = wireless, pins = PinnedHeadUnits(context), peerKey = peerKey, trustOnFirstUse = trustOnFirstUse))
+    ), this, net.prototux.aare.DiagAapLog, SessionOptions(sendPings = wireless, pins = PinnedHeadUnits(context), peerKey = peerKey, trustOnFirstUse = trustOnFirstUse))
 
     private var video: VideoChannel? = null
     private var mic: MicrophoneChannel? = null
@@ -149,7 +150,21 @@ class CarSession(
             navBridge?.updatePhone(g)
         }
         runtime.start()
+        settings.registerListener(uiScaleListener)
         listener.onStatus(this, context.getString(R.string.notif_status_connecting_to, transport.name))
+    }
+
+    /** The interface size changed: lay the projection out again, like a UI config update from the car. */
+    private val uiScaleListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == Settings.KEY_UI_SCALE) main.post {
+            val last = videoConfig ?: return@post
+            try {
+                startProjection(last, runtime.rightHandDrive)
+            } catch (e: Exception) {
+                Log.e(TAG, "can't apply the new interface size", e)
+                aap.stop()
+            }
+        }
     }
 
     fun stop() = aap.stop()
@@ -172,6 +187,7 @@ class CarSession(
             when {
                 s.hasMediaSinkService() && s.mediaSinkService.videoConfigsCount > 0 -> {
                     // The main display, and the instrument cluster's if the car has one (display_type CLUSTER).
+                    DiagLog.add("video service ${s.id}: ${s.mediaSinkService.toString().replace(Regex("\\s+"), " ")}")
                     when (s.mediaSinkService.displayType.number) {
                         0 -> if (video == null) video = VideoChannel(s, videoListener(rhd)).also { channels += it }
                         1 -> if (cluster == null) cluster = ClusterDisplay(context, runtime).also { channels += it.open(s) }
@@ -179,7 +195,10 @@ class CarSession(
                 }
                 s.hasMediaSinkService() -> {
                     // The official phone never uses telephony audio (calls stay on Bluetooth HFP).
-                    if (s.mediaSinkService.audioType != AudioStreamType.AUDIO_STREAM_TELEPHONY) {
+                    // Cars may list a second channel of a kind; like Android Auto, only the first is opened.
+                    // All captures share one phone-wide recording, so two media channels would stop each other.
+                    val type = s.mediaSinkService.audioType
+                    if (type != AudioStreamType.AUDIO_STREAM_TELEPHONY && audio.none { it.streamType == type }) {
                         AudioChannel(s, audioListener).also { audio += it; channels += it }
                     }
                 }
@@ -258,8 +277,15 @@ class CarSession(
     // ------------------------------------------------------------------ video
 
     private fun videoListener(rightHandDrive: Boolean) = object : VideoChannel.Listener {
-        override fun chooseConfiguration(configs: List<VideoConfiguration>, preferred: List<Int>): Int =
-            chooseVideo(configs, preferred, settings.maxVideoHeight, settings.prefer60fps)
+        override fun chooseConfiguration(configs: List<VideoConfiguration>, preferred: List<Int>): Int {
+            val index = chooseVideo(configs, preferred, settings.maxVideoHeight, settings.prefer60fps)
+            DiagLog.add("video: car offers ${configs.joinToString { describeVideo(it) }}; prefers $preferred; chose ${configs.getOrNull(index)?.let { describeVideo(it) }}")
+            main.removeCallbacks(focusFallback)
+            main.postDelayed(focusFallback, FOCUS_ANSWER_MS)
+            main.removeCallbacks(videoReport)
+            main.postDelayed(videoReport, VIDEO_REPORT_MS)
+            return index
+        }
 
         override fun onVideoStart(index: Int, config: VideoConfiguration) {
             main.post {
@@ -275,7 +301,7 @@ class CarSession(
         }
 
         override fun onVideoFocus(projected: Boolean) {
-            Log.i(TAG, "video focus: ${if (projected) "projected" else "native"}")
+            DiagLog.add("video focus: ${if (projected) "projected" else "native"}")
             main.post {
                 encoder?.setSuspended(!projected)
                 if (projected) encoder?.requestKeyFrame()
@@ -309,17 +335,38 @@ class CarSession(
     /** The configuration the projection runs with (main thread), for UI config updates. */
     private var videoConfig: VideoConfiguration? = null
 
+    /** Frames the encoder produced this session, whether or not they could be sent. */
+    @Volatile private var framesEncoded = 0
+
+    /** A car that never answers the focus request would otherwise get no video, and stay black. */
+    private val focusFallback = Runnable {
+        if (video?.assumeProjectedIfUnanswered() == true) {
+            DiagLog.add("video focus: no answer from the car after ${FOCUS_ANSWER_MS / 1000} s, sending video anyway")
+        }
+    }
+
+    /** What a black car screen needs explained: kept in the connection log, which survives the drive home. */
+    private val videoReport = object : Runnable {
+        private var left = VIDEO_REPORTS
+        override fun run() {
+            val ch = video ?: return
+            DiagLog.add("video: $framesEncoded frames encoded, ${ch.acksReceived} acks, ${ch.droppedFrames} dropped, ${ch.pendingFrames} waiting (window ${ch.maxUnacked}" +
+                "${if (ch.ackless) ", no acks" else ""}), ack ${ch.ackLatencyMs} ms, focused=${ch.focused}")
+            if (--left > 0) main.postDelayed(this, VIDEO_REPORT_MS)
+        }
+    }
+
     private fun startProjection(config: VideoConfiguration, rightHandDrive: Boolean) {
         teardownVideo()
         videoConfig = config
         val (w, h) = resolution(config.codecResolution)
-        val fps = if (config.frameRate == VideoFrameRateType.VIDEO_FPS_60) 60 else 30
-        val dpi = if (config.density > 0) config.density else defaultDensity(minOf(w, h))
+        val fps = fpsOf(config)
+        val dpi = scaledDensity(if (config.density > 0) config.density else defaultDensity(minOf(w, h)), settings.uiScalePercent)
         val marginW = config.widthMargin
         val marginH = config.heightMargin
         val insets = config.uiConfig.takeIf { config.hasUiConfig() }?.contentInsets
         videoDescription = "${w}x$h@$fps ${dpi}dpi" + if (marginW + marginH > 0) " margins ${marginW}x$marginH" else ""
-        Log.i(TAG, "projection $videoDescription")
+        DiagLog.add("projection $videoDescription")
 
         val ch = video ?: return
         val enc = VideoEncoder(w, h, fps, sink = object : VideoEncoder.Sink {
@@ -327,11 +374,13 @@ class CarSession(
             // Per stream: a restart (new config, encoder error) starts again from the full bitrate.
             private val abr = BitrateController(VideoEncoder.defaultBitrate(w, h, fps)) { encoder?.setBitrate(it) }
             override fun onCodecConfig(data: ByteArray, offset: Int, length: Int) {
-                Log.i(TAG, "codec config: $length bytes")
+                DiagLog.add("video: codec config ${describeCodecConfig(data, offset, length)}")
                 ch.sendCodecConfig(data, offset, length)
             }
             override fun onFrame(data: ByteArray, offset: Int, length: Int, ptsUs: Long, keyFrame: Boolean) {
                 frames++
+                framesEncoded++
+                if (frames == 1) DiagLog.add("video: first frame (${if (keyFrame) "key, " else ""}$length bytes), focused=${ch.focused}")
                 if (frames == 1 || keyFrame && frames < 100 || frames % 600 == 0) {
                     Log.i(TAG, "video frame $frames (${if (keyFrame) "key, " else ""}$length bytes), focused=${ch.focused}, dropped=${ch.droppedFrames}")
                 }
@@ -340,6 +389,7 @@ class CarSession(
             }
             override fun onError(e: Exception) {
                 Log.e(TAG, "encoder failed, restarting", e)
+                DiagLog.add("video: encoder failed, restarting: ${e.message}")
                 main.post { startProjection(videoConfig ?: config, rightHandDrive) }
             }
         })
@@ -377,10 +427,16 @@ class CarSession(
     // ------------------------------------------------------------------ input
 
     @Volatile private var touchSize: Pair<Int, Int>? = null
+    private var touchesLogged = 0
 
     private val inputListener = object : InputChannel.Listener {
         override fun onInput(report: InputReport) {
             if (report.hasTouchEvent()) {
+                if (touchesLogged < TOUCHES_TO_LOG) {
+                    touchesLogged++
+                    val p = report.touchEvent.pointerDataList.firstOrNull()
+                    Log.i(TAG, "touch from the car: ${p?.x},${p?.y} action ${report.touchEvent.action}")
+                }
                 val ev = touch?.map(report.touchEvent) ?: return
                 display?.dispatchTouch(ev)
             }
@@ -592,6 +648,8 @@ class CarSession(
     // ------------------------------------------------------------------ teardown
 
     private fun teardown() {
+        main.removeCallbacks(focusFallback)
+        main.removeCallbacks(videoReport)
         net.prototux.aare.notify.CarNotificationListener.sink = null
         audioOuts.values.forEach { it.stop() }; audioOuts.clear()
         phoneBridge?.stop(); phoneBridge = null
@@ -599,6 +657,7 @@ class CarSession(
         drivingMode.stop()
         cluster?.stop()
         micRouter.shutdown()
+        settings.unregisterListener(uiScaleListener)
         teardownVideo()
         runtime.stop()
         CarData.reset(owner = this)
@@ -649,6 +708,46 @@ class CarSession(
         }
 
         /**
+         * The density to draw with for an interface size in percent: a lower density fits more on
+         * the same screen. Kept to 70-100%, so text and touch targets stay usable at a glance.
+         */
+        fun scaledDensity(density: Int, percent: Int): Int = density * percent.coerceIn(70, 100) / 100
+
+        /** How long the car gets to answer the video focus request before we send video anyway. */
+        private const val FOCUS_ANSWER_MS = 3_000L
+        private const val VIDEO_REPORT_MS = 5_000L
+        /** A minute of reports: enough for the first seconds of a session, without flooding the log. */
+        private const val VIDEO_REPORTS = 12
+        private const val TOUCHES_TO_LOG = 10
+
+        private fun describeVideo(c: VideoConfiguration): String {
+            val (w, h) = resolution(c.codecResolution)
+            val margins = if (c.widthMargin + c.heightMargin > 0) " margins ${c.widthMargin}x${c.heightMargin}" else ""
+            val rate = if (c.hasFrameRate()) "" else " (fps not stated)"
+            val codec = if (c.hasVideoCodecType()) " ${c.videoCodecType.name.removePrefix("MEDIA_CODEC_VIDEO_")}" else ""
+            return "${w}x$h@${fpsOf(c)}$rate ${c.density}dpi$margins$codec"
+        }
+
+        /** A car that doesn't state a frame rate gets 30: protobuf would read the missing field as the enum's first value, 60. */
+        fun fpsOf(c: VideoConfiguration): Int = if (c.hasFrameRate() && c.frameRate == VideoFrameRateType.VIDEO_FPS_60) 60 else 30
+
+        /**
+         * The H.264 profile and level the encoder really produced (from its SPS), which is what a car's
+         * decoder may refuse, plus the first bytes as hex.
+         */
+        fun describeCodecConfig(data: ByteArray, offset: Int, length: Int): String {
+            val end = offset + length
+            fun hex(b: Byte) = "%02x".format(b.toInt() and 0xFF)
+            val head = (offset until minOf(end, offset + 32)).joinToString("") { hex(data[it]) }
+            val sps = (offset until end - 6).firstOrNull { i ->
+                data[i].toInt() == 0 && data[i + 1].toInt() == 0 && data[i + 2].toInt() == 1 && data[i + 3].toInt() and 0x1F == 7
+            } ?: return "$length bytes, no SPS: $head"
+            val profile = data[sps + 4].toInt() and 0xFF
+            val level = data[sps + 6].toInt() and 0xFF
+            return "$length bytes, H.264 profile $profile constraints ${hex(data[sps + 5])} level $level: $head"
+        }
+
+        /**
          * Picks the best configuration the phone can encode comfortably: the largest one within
          * [maxHeight] (short side), preferring 60 fps when asked, among the head unit's preferred
          * indices when it gave any.
@@ -666,7 +765,7 @@ class CarSession(
                 val c = configs[i]
                 val s = shortSide(i)
                 val fits = s <= maxHeight
-                val fps60 = c.frameRate == VideoFrameRateType.VIDEO_FPS_60
+                val fps60 = fpsOf(c) == 60
                 return (if (fits) 1_000_000 else 0) + (if (fits) s else -s) * 10 + (if (fps60 == prefer60) 1 else 0)
             }
             return candidates.maxByOrNull(::score) ?: 0

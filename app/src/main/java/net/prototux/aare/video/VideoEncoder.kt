@@ -55,7 +55,10 @@ class VideoEncoder(
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
             // Long GOP: the transport is reliable, and we ask for key frames when they're needed.
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
-            int(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
+            // Constrained Baseline says outright what plain Baseline only happens to be: a strict
+            // car decoder may refuse a stream without that flag in its SPS.
+            val constrained = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1 && CONSTRAINED_PROFILE !in dropped
+            int(MediaFormat.KEY_PROFILE, if (constrained) MediaCodecInfo.CodecProfileLevel.AVCProfileConstrainedBaseline else MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
             int(MediaFormat.KEY_LEVEL, levelFor(width, height, fps))
             int(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
             // Keep frames flowing on a static screen so the head unit's decoder never stalls.
@@ -73,6 +76,7 @@ class VideoEncoder(
         // Encoders differ in which tuning keys they accept: drop them step by step until one works.
         val fallbacks = listOf(
             emptyList(),
+            listOf(CONSTRAINED_PROFILE),
             listOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES),
             listOf(MediaFormat.KEY_LATENCY, MediaFormat.KEY_PRIORITY, MediaFormat.KEY_MAX_B_FRAMES),
             listOf(MediaFormat.KEY_PROFILE, MediaFormat.KEY_LEVEL, MediaFormat.KEY_BITRATE_MODE),
@@ -184,6 +188,8 @@ class VideoEncoder(
 
     companion object {
         private const val TAG = "AareVideoEnc"
+        /** Not a format key: in the dropped set, it means falling back to plain Baseline. */
+        private const val CONSTRAINED_PROFILE = "aare-constrained-baseline"
 
         fun defaultBitrate(w: Int, h: Int, fps: Int): Int {
             // ~0.12 bits per pixel per frame: crisp UI text without saturating USB 2 / Wi-Fi,

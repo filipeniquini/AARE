@@ -158,6 +158,7 @@ class SessionLoopbackTest {
         // microphone
         mic!!.openMic()
         assertTrue(micData.await(3, TimeUnit.SECONDS))
+        assertEquals("no SETUP on the mic channel, like Android Auto", 0, hu.micSetups.get())
 
         // audio focus round trip, then PCM on the media channel
         phone.requestAudioFocus(AudioFocusRequestType.AUDIO_FOCUS_GAIN)

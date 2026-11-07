@@ -76,6 +76,8 @@ class HeadUnitSimulator(
     private val maxUnacked: Int = 4,
     /** Raw H.264 (Annex-B) of the projection is written here if set. */
     private val videoOut: OutputStream? = null,
+    /** False: stays silent on video focus requests, like a car that waits for video first. */
+    private val answerVideoFocus: Boolean = true,
 ) {
     val huCert = SelfSignedCertificate.generate("AARE simulated head unit")
     private val cryptor = Cryptor(huCert.certificate, huCert.keyPair.private, client = true)
@@ -97,6 +99,8 @@ class HeadUnitSimulator(
     val audioChunks = AtomicInteger()
     val pingsAnswered = AtomicInteger()
     val focusRequests = AtomicInteger()
+    /** SETUPs on the microphone channel, which Android Auto never sends (VW MIB units reject them). */
+    val micSetups = AtomicInteger()
     val sensorRequests = ConcurrentHashMap.newKeySet<SensorType>()
     val firstVideoFrame = CountDownLatch(1)
     val byeBye = CountDownLatch(1)
@@ -195,7 +199,7 @@ class HeadUnitSimulator(
             MediaMsg.VIDEO_FOCUS_REQUEST -> {
                 focusRequests.incrementAndGet()
                 val r = VideoFocusRequestNotification.parseFrom(m.bodyBytes())
-                send(video, MediaMsg.VIDEO_FOCUS_NOTIFICATION, VideoFocusNotification.newBuilder()
+                if (answerVideoFocus) send(video, MediaMsg.VIDEO_FOCUS_NOTIFICATION, VideoFocusNotification.newBuilder()
                     .setFocus(if (r.mode == VideoFocusMode.VIDEO_FOCUS_NATIVE) VideoFocusMode.VIDEO_FOCUS_NATIVE else VideoFocusMode.VIDEO_FOCUS_PROJECTED)
                     .setUnsolicited(false).build())
             }
@@ -220,7 +224,10 @@ class HeadUnitSimulator(
 
     private fun micSource(m: AapMessage) {
         when (m.id) {
-            MediaMsg.SETUP -> send(mic, MediaMsg.CONFIG, Config.newBuilder().setStatus(Config.Status.STATUS_READY).setMaxUnacked(1).build())
+            MediaMsg.SETUP -> {
+                micSetups.incrementAndGet()
+                send(mic, MediaMsg.CONFIG, Config.newBuilder().setStatus(Config.Status.STATUS_READY).setMaxUnacked(1).build())
+            }
             MediaMsg.MICROPHONE_REQUEST -> {
                 val r = MicrophoneRequest.parseFrom(m.bodyBytes())
                 send(mic, MediaMsg.MICROPHONE_RESPONSE, MicrophoneResponse.newBuilder().setStatus(0).setSessionId(1).build())
