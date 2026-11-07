@@ -360,7 +360,8 @@ class CarSession(
         teardownVideo()
         videoConfig = config
         val (w, h) = resolution(config.codecResolution)
-        val fps = fpsOf(config)
+        // "Prefer 60 fps" off: 30 fps even when the car only offers 60 (it shows fewer frames fine).
+        val fps = if (settings.prefer60fps) fpsOf(config) else minOf(fpsOf(config), 30)
         val dpi = scaledDensity(if (config.density > 0) config.density else defaultDensity(minOf(w, h)), settings.uiScalePercent)
         val marginW = config.widthMargin
         val marginH = config.heightMargin

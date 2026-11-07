@@ -378,11 +378,11 @@ class CarRuntime(
             entries += CarAppEntry(mediaId(m.packageName), m.packageName, m.label, m.icon, CarAppKind.MEDIA)
         }
         // Built in, like Android Auto's: calls and the car-side settings.
-        entries += CarAppEntry(PHONE_ID, context.packageName, "Phone", builtinIcon(R.drawable.ic_car_phone), CarAppKind.PHONE)
-        entries += CarAppEntry(SETTINGS_ID, context.packageName, "Settings", builtinIcon(R.drawable.ic_car_settings), CarAppKind.SETTINGS)
-        entries += CarAppEntry(NOTIFICATIONS_ID, context.packageName, "Notifications", builtinIcon(R.drawable.ic_car_notifications), CarAppKind.NOTIFICATIONS)
+        entries += CarAppEntry(PHONE_ID, context.packageName, context.getString(R.string.car_app_phone), builtinIcon(R.drawable.ic_car_phone), CarAppKind.PHONE)
+        entries += CarAppEntry(SETTINGS_ID, context.packageName, context.getString(R.string.car_app_settings), builtinIcon(R.drawable.ic_car_settings), CarAppKind.SETTINGS)
+        entries += CarAppEntry(NOTIFICATIONS_ID, context.packageName, context.getString(R.string.car_app_notifications), builtinIcon(R.drawable.ic_car_notifications), CarAppKind.NOTIFICATIONS)
         if (settings.phoneScreen && phoneScreenAllowed) {
-            entries += CarAppEntry(PHONE_SCREEN_ID, context.packageName, "Phone screen", builtinIcon(R.drawable.ic_phone_screen), CarAppKind.PHONE_SCREEN)
+            entries += CarAppEntry(PHONE_SCREEN_ID, context.packageName, context.getString(R.string.phone_section_title), builtinIcon(R.drawable.ic_phone_screen), CarAppKind.PHONE_SCREEN)
         }
         for (m in messaging) {
             if (m.packageName in hidden || entries.any { it.packageName == m.packageName }) continue

@@ -54,6 +54,14 @@ internal fun MirrorScreen(runtime: CarRuntime, driving: Boolean, modifier: Modif
     val locked = rememberKeyguardLocked()
     val allowed = !locked && (!driving || (foreground != null && foreground in navApps))
     var mirroring by remember { mutableStateOf(true) }
+    // The phone renders the mirror this much smaller; the car view stretches it back.
+    val scale = runtime.settings.mirrorScalePercent.coerceIn(25, 100) / 100f
+    fun attach(st: SurfaceTexture, surface: Surface, w: Int, h: Int): Boolean {
+        val sw = maxOf(1, (w * scale).toInt())
+        val sh = maxOf(1, (h * scale).toInt())
+        st.setDefaultBufferSize(sw, sh)
+        return PhoneMirror.attach(runtime.projection(), surface, sw, sh, maxOf(1, (runtime.densityDpi * scale).toInt()))
+    }
 
     DisposableEffect(Unit) {
         runtime.screenBack = { MirrorTouchService.instance?.back() == true }
@@ -69,10 +77,10 @@ internal fun MirrorScreen(runtime: CarRuntime, driving: Boolean, modifier: Modif
                         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                                 surface = Surface(st)
-                                mirroring = PhoneMirror.attach(runtime.projection(), surface!!, w, h, runtime.densityDpi)
+                                mirroring = attach(st, surface!!, w, h)
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
-                                surface?.let { mirroring = PhoneMirror.attach(runtime.projection(), it, w, h, runtime.densityDpi) }
+                                surface?.let { mirroring = attach(st, it, w, h) }
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                 PhoneMirror.detach()
@@ -85,20 +93,22 @@ internal fun MirrorScreen(runtime: CarRuntime, driving: Boolean, modifier: Modif
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-            // Touches are caught above the mirror and replayed on the phone.
+            // Touches are caught above the mirror and passed to the phone live, as the finger moves.
             Box(Modifier.fillMaxSize().pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown()
-                    val start = down.uptimeMillis
-                    val points = arrayListOf(down.position)
+                    val touch = MirrorTouchService.instance
+                    val toPhone = phoneMapper(context, size.width, size.height)
+                    // A touch outside the phone picture (in the letterboxing) does nothing.
+                    val start = toPhone(down.position.x, down.position.y, false)
+                    if (touch != null && start != null) touch.touchDown(start.first, start.second)
                     while (true) {
                         val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                        points += c.position
                         c.consume()
-                        if (!c.pressed) {
-                            replay(context, size.width, size.height, points.map { it.x to it.y }, c.uptimeMillis - start, viewConfiguration.touchSlop)
-                            break
-                        }
+                        if (touch == null || start == null) { if (!c.pressed) break else continue }
+                        val p = toPhone(c.position.x, c.position.y, true)!!
+                        if (!c.pressed) { touch.touchUp(p.first, p.second); break }
+                        touch.touchMove(p.first, p.second)
                     }
                 }
             })
@@ -138,22 +148,26 @@ private fun rememberKeyguardLocked(): Boolean {
     return locked
 }
 
-/** Replays a car gesture on the phone: car pixels to phone pixels, through the letterboxing. */
-private fun replay(context: android.content.Context, viewW: Int, viewH: Int, points: List<Pair<Float, Float>>, durationMs: Long, slop: Float) {
-    val touch = MirrorTouchService.instance ?: return
+/**
+ * Car pixels to phone pixels, through the letterboxing (the mirror keeps the phone's aspect ratio,
+ * centered). Outside the phone picture: null, or the nearest edge with clamp.
+ */
+private fun phoneMapper(context: android.content.Context, viewW: Int, viewH: Int): (Float, Float, Boolean) -> Pair<Float, Float>? {
     val phone = PhoneMirror.phoneScreenSize(context)
-    // The mirror keeps the phone's aspect ratio, centered.
     val scale = minOf(viewW.toFloat() / phone.x, viewH.toFloat() / phone.y)
     val ox = (viewW - phone.x * scale) / 2
     val oy = (viewH - phone.y * scale) / 2
-    val mapped = points.map { (x, y) -> (x - ox) / scale to (y - oy) / scale }
-        .filter { (x, y) -> x in 0f..phone.x.toFloat() && y in 0f..phone.y.toFloat() }
-    if (mapped.isEmpty()) return
-    val (x0, y0) = points.first()
-    val moved = points.any { (x, y) -> kotlin.math.hypot(x - x0, y - y0) > slop }
-    if (moved) touch.swipe(mapped.filterIndexed { i, _ -> i % 3 == 0 || i == mapped.lastIndex }, durationMs)
-    else if (durationMs > 500) touch.swipe(listOf(mapped.first()), durationMs) // long press
-    else touch.tap(mapped.first().first, mapped.first().second)
+    val maxX = phone.x - 1f
+    val maxY = phone.y - 1f
+    return { x, y, clamp ->
+        val px = (x - ox) / scale
+        val py = (y - oy) / scale
+        when {
+            px in 0f..maxX && py in 0f..maxY -> px to py
+            clamp -> px.coerceIn(0f, maxX) to py.coerceIn(0f, maxY)
+            else -> null
+        }
+    }
 }
 
 /** Navigation apps that can't be hosted, recognised even before they post guidance. */

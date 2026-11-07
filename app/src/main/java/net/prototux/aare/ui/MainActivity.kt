@@ -104,6 +104,7 @@ import kotlinx.coroutines.withContext
 import net.prototux.aare.DiagLog
 import net.prototux.aare.R
 import net.prototux.aare.Settings
+import net.prototux.aare.audio.AndroidAutoSwitch
 import net.prototux.aare.audio.CaptureMethod
 import net.prototux.aare.audio.CaptureMethods
 import net.prototux.aare.car.DrivingMode
@@ -378,6 +379,7 @@ private fun ConnectionSettings(settings: Settings) {
         Section(stringResource(R.string.setup_section_connecting)) {
             Toggle(stringResource(R.string.setup_toggle_wireless_title), stringResource(R.string.setup_toggle_wireless_subtitle), wireless) { wireless = it; settings.wireless = it; if (it) ProjectionService.probeWireless(ctx) }
             Toggle(stringResource(R.string.setup_toggle_resume_music_title), stringResource(R.string.setup_toggle_resume_music_subtitle), resume) { resume = it; settings.resumeMedia = it }
+            AndroidAutoRow()
         }
         Section(stringResource(R.string.setup_section_location)) {
             Toggle(stringResource(R.string.setup_toggle_car_gps_title), stringResource(R.string.setup_toggle_car_gps_subtitle), carGps) {
@@ -504,6 +506,37 @@ private fun MessageSettings(settings: Settings, refresh: Int) {
     }
 }
 
+/** Google's Android Auto, which takes the car before AARE: switch it off and on from here (through Shizuku). */
+@Composable
+private fun AndroidAutoRow() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var state by remember { mutableStateOf(AndroidAutoSwitch.state(ctx)) }
+    var busy by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    if (state == AndroidAutoSwitch.State.NOT_INSTALLED) return
+    val available = AndroidAutoSwitch.available()
+    val enabled = state == AndroidAutoSwitch.State.ENABLED
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.aa_switch_title), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(if (enabled) R.string.aa_switch_enabled else R.string.aa_switch_disabled),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(12.dp))
+        TextButton(enabled = available && !busy, onClick = {
+            busy = true
+            scope.launch {
+                failed = !AndroidAutoSwitch.setEnabled(ctx, !enabled)
+                state = AndroidAutoSwitch.state(ctx)
+                busy = false
+            }
+        }) { Text(stringResource(if (enabled) R.string.aa_switch_disable else R.string.aa_switch_enable)) }
+    }
+    if (!available) Text(stringResource(R.string.aa_switch_needs_shizuku), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (failed) Text(stringResource(R.string.aa_switch_failed), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+}
+
 @Composable
 private fun Toggle(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -522,6 +555,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var theme by remember { mutableStateOf(settings.carTheme) }
     var rail by remember { mutableStateOf(settings.railPosition) }
     var phoneScreen by remember { mutableStateOf(settings.phoneScreen) }
+    var mirrorScale by remember { mutableIntStateOf(settings.mirrorScalePercent) }
     var darkBar by remember { mutableStateOf(settings.darkBar) }
     var passenger by remember { mutableStateOf(settings.ignoreDriving) }
     var weather by remember { mutableStateOf(settings.showWeather) }
@@ -590,6 +624,12 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
                     ctx.startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
                 Text(stringResource(R.string.phone_hint_touch_capture),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+                Choices(stringResource(R.string.phone_choice_quality), Settings.MIRROR_SCALES.map { "$it" to "$it%" }, "$mirrorScale") {
+                    mirrorScale = it.toInt(); settings.mirrorScalePercent = mirrorScale
+                }
+                Text(stringResource(R.string.phone_hint_quality),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

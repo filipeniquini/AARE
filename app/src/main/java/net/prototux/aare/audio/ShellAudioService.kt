@@ -89,6 +89,20 @@ class ShellAudioService : IShellAudio.Stub {
         r.release()
     }
 
+    override fun setAndroidAutoEnabled(enabled: Boolean): Boolean = try {
+        // Fixed arguments, one fixed package: this process has adb rights.
+        val command = if (enabled) listOf("pm", "enable", "--user", "current", ANDROID_AUTO_PACKAGE)
+        else listOf("pm", "disable-user", "--user", "current", ANDROID_AUTO_PACKAGE)
+        val process = ProcessBuilder(command).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText()
+        val ok = process.waitFor() == 0
+        if (!ok) Log.w(TAG, "pm failed: $output")
+        ok
+    } catch (e: Exception) {
+        Log.w(TAG, "pm failed", e)
+        false
+    }
+
     override fun destroy() {
         stop()
         exitProcess(0)
@@ -116,5 +130,6 @@ class ShellAudioService : IShellAudio.Stub {
     private companion object {
         const val TAG = "AareShellAudio"
         const val SHELL_PACKAGE = "com.android.shell"
+        const val ANDROID_AUTO_PACKAGE = AndroidAutoSwitch.PACKAGE
     }
 }

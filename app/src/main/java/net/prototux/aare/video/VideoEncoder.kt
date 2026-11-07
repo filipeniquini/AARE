@@ -61,6 +61,9 @@ class VideoEncoder(
             int(MediaFormat.KEY_PROFILE, if (constrained) MediaCodecInfo.CodecProfileLevel.AVCProfileConstrainedBaseline else MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline)
             int(MediaFormat.KEY_LEVEL, levelFor(width, height, fps))
             int(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_VBR)
+            // Never encode more than the stream's rate, whatever the phone draws (a 120 Hz screen
+            // mirrored would otherwise push twice the frames): less work for the phone and the car.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && MAX_FPS !in dropped) setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, fps.toFloat())
             // Keep frames flowing on a static screen so the head unit's decoder never stalls.
             if (MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER !in dropped) setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / 5)
             int(MediaFormat.KEY_PRIORITY, 0) // realtime
@@ -80,7 +83,7 @@ class VideoEncoder(
             listOf(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES),
             listOf(MediaFormat.KEY_LATENCY, MediaFormat.KEY_PRIORITY, MediaFormat.KEY_MAX_B_FRAMES),
             listOf(MediaFormat.KEY_PROFILE, MediaFormat.KEY_LEVEL, MediaFormat.KEY_BITRATE_MODE),
-            listOf(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER),
+            listOf(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, MAX_FPS),
         )
         var configured = false
         var lastError: Exception? = null
@@ -190,6 +193,7 @@ class VideoEncoder(
         private const val TAG = "AareVideoEnc"
         /** Not a format key: in the dropped set, it means falling back to plain Baseline. */
         private const val CONSTRAINED_PROFILE = "aare-constrained-baseline"
+        private const val MAX_FPS = MediaFormat.KEY_MAX_FPS_TO_ENCODER
 
         fun defaultBitrate(w: Int, h: Int, fps: Int): Int {
             // ~0.12 bits per pixel per frame: crisp UI text without saturating USB 2 / Wi-Fi,

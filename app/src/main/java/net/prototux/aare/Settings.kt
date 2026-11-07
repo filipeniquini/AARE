@@ -111,6 +111,14 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("phone_screen", false)
         set(v) = prefs.edit { putBoolean("phone_screen", v) }
 
+    /**
+     * Resolution of the mirrored phone screen, in percent of the car area it fills. Lower is
+     * blurrier but lighter on the phone, which then lags less in heavy moments.
+     */
+    var mirrorScalePercent: Int
+        get() = prefs.getInt("mirror_scale_percent", 100)
+        set(v) = prefs.edit { putInt("mirror_scale_percent", v) }
+
     /** While connected, the car's GPS becomes the phone's location (needs AARE as mock location app). */
     var carGpsForPhone: Boolean
         get() = prefs.getBoolean("car_gps", true)
@@ -208,6 +216,8 @@ class Settings(context: Context) {
         const val KEY_UI_SCALE = "ui_scale_percent"
         /** The sizes offered for the car screen's interface, largest first. */
         val UI_SCALES = listOf(100, 90, 80, 70)
+        /** The resolutions offered for the mirrored phone screen, sharpest first. */
+        val MIRROR_SCALES = listOf(100, 75, 50)
         const val WALLPAPER_CUSTOM = "custom"
         /** The user's wallpaper photo, in the app's files. */
         const val WALLPAPER_FILE = "wallpaper.jpg"
