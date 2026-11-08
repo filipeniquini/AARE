@@ -1,0 +1,182 @@
+package net.prototux.aare.apps
+
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
+import android.content.pm.ApplicationInfo
+import android.graphics.Bitmap
+import android.os.IBinder
+import android.util.Log
+import android.view.MotionEvent
+import android.view.Surface
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import net.prototux.aare.BuildConfig
+import net.prototux.aare.DiagLog
+import net.prototux.aare.audio.CaptureMethods
+import rikka.shizuku.Shizuku
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+/**
+ * Any phone app on the car screen: opened on a virtual display the size of the car's (created
+ * by [ShellDisplayService] through Shizuku), drawn into the car UI, with the driver's touches
+ * sent back to it. Apps keep running there while the car shows something else, and nothing of
+ * them shows on the phone's own screen. One display for all of them, like a second phone screen.
+ */
+object PhoneApps {
+    /** A launchable phone app. */
+    class App(val component: ComponentName, val label: String, val icon: Bitmap?, val category: Int)
+
+    enum class Kind { NAVIGATION, MUSIC, VIDEO, SOCIAL, OTHER }
+
+    private const val TAG = "AarePhoneApps"
+    private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "aare-phone-apps") }
+    @Volatile private var service: IShellDisplay? = null
+    private var connection: ServiceConnection? = null
+    private var args: Shizuku.UserServiceArgs? = null
+    @Volatile private var displayId = -1
+    @Volatile private var size = Triple(0, 0, 0)
+
+    private val _ready = MutableStateFlow<Boolean?>(null)
+    /** Whether the display exists: null while setting up, false if it can't be made (no Shizuku). */
+    val ready: StateFlow<Boolean?> = _ready
+
+    fun available() = CaptureMethods.shizukuAvailable()
+
+    /** Shows the display in [surface] ([width]×[height] pixels), creating it the first time. */
+    fun attach(context: Context, surface: Surface, width: Int, height: Int, dpi: Int, then: () -> Unit = {}) = worker.execute {
+        val s = bind(context) ?: run { _ready.value = false; return@execute }
+        try {
+            // A new size (density) for the apps: start the display afresh. Resizing it in place only
+            // reloaded some resources: YouTube's icons shrank but its layout stayed (2026-11-08).
+            if (displayId >= 0 && size.third != dpi) {
+                DiagLog.add("phone apps: size changed to ${dpi}dpi, reopening the display")
+                s.release()
+                displayId = -1
+            }
+            if (displayId < 0) {
+                displayId = s.create(surface, width, height, dpi)
+                size = Triple(width, height, dpi)
+                _ready.value = displayId >= 0
+                DiagLog.add(if (displayId >= 0) "phone apps: display $displayId ${width}x$height ${dpi}dpi" else "phone apps: can't create the display")
+            } else {
+                s.setSurface(surface)
+                // Same density, another size (the car's insets changed): resizing is enough.
+                if (size != Triple(width, height, dpi)) { s.resize(width, height, dpi); size = Triple(width, height, dpi) }
+                _ready.value = true
+            }
+            if (displayId >= 0) then()
+        } catch (e: Exception) {
+            Log.w(TAG, "attach", e)
+            _ready.value = false
+        }
+    }
+
+    /** The car shows something else: the apps keep running, drawing nowhere. */
+    fun detach() = worker.execute { runCatching { service?.setSurface(null) } }
+
+    /** Opens [app] on the display (after [attach]). */
+    fun open(app: ComponentName) = worker.execute {
+        val ok = runCatching { service?.launch(app.flattenToString()) }.getOrNull() == true
+        if (!ok) DiagLog.add("phone apps: couldn't open ${app.packageName}")
+    }
+
+    fun touch(event: MotionEvent) {
+        val copy = MotionEvent.obtain(event)
+        worker.execute { runCatching { service?.touch(copy) }; copy.recycle() }
+    }
+
+    fun back() = worker.execute { runCatching { service?.key(android.view.KeyEvent.KEYCODE_BACK) } }
+
+    /** The package in front on the display, or null (blocking: off the main thread). */
+    fun topPackage(): String? = runCatching { service?.topPackage() }.getOrNull()
+
+    /** The car is gone: close the display (its apps close too) and the helper process. */
+    fun release() = worker.execute {
+        runCatching { service?.release() }
+        displayId = -1
+        _ready.value = null
+        val a = args; val c = connection
+        if (a != null && c != null) runCatching { Shizuku.unbindUserService(a, c, true) }
+        service = null; connection = null; args = null
+    }
+
+    private fun bind(context: Context): IShellDisplay? {
+        service?.takeIf { it.asBinder().pingBinder() }?.let { return it }
+        if (!available()) return null
+        val latch = CountDownLatch(1)
+        val a = Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellDisplayService::class.java.name))
+            .daemon(false)
+            .processNameSuffix("apps")
+            .debuggable(BuildConfig.DEBUG)
+            .version(BuildConfig.VERSION_CODE)
+        val c = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+                service = binder?.takeIf { it.pingBinder() }?.let(IShellDisplay.Stub::asInterface)
+                latch.countDown()
+            }
+            override fun onServiceDisconnected(name: ComponentName?) {
+                service = null
+                displayId = -1
+                _ready.value = null
+            }
+        }
+        runCatching { Shizuku.bindUserService(a, c) }.onFailure { Log.w(TAG, "Shizuku bind", it); return null }
+        args = a; connection = c
+        latch.await(5, TimeUnit.SECONDS)
+        return service
+    }
+
+    // ---------------------------------------------------------------- the phone's apps
+
+    /** Launchable apps on the phone (package manager work: off the main thread). */
+    fun query(context: Context, iconSizePx: Int): List<App> {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return pm.queryIntentActivities(intent, 0).mapNotNull { ri ->
+            val ai = ri.activityInfo ?: return@mapNotNull null
+            if (ai.packageName == context.packageName) return@mapNotNull null
+            val icon = runCatching { ri.loadIcon(pm).toBitmap(iconSizePx) }.getOrNull()
+            App(ComponentName(ai.packageName, ai.name), ri.loadLabel(pm).toString(), icon, ai.applicationInfo.category)
+        }.distinctBy { it.component.packageName }
+    }
+
+    private fun android.graphics.drawable.Drawable.toBitmap(size: Int): Bitmap {
+        val b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        setBounds(0, 0, size, size)
+        draw(c)
+        return b
+    }
+
+    /**
+     * What kind of app, for the driving and locked-phone rules: the category the app declares,
+     * plus well-known apps that don't declare one.
+     */
+    fun kind(packageName: String, category: Int): Kind = when {
+        packageName in SOCIAL -> Kind.SOCIAL
+        packageName in NAVIGATION -> Kind.NAVIGATION
+        packageName in MUSIC -> Kind.MUSIC
+        packageName in VIDEO -> Kind.VIDEO
+        category == ApplicationInfo.CATEGORY_SOCIAL -> Kind.SOCIAL
+        category == ApplicationInfo.CATEGORY_MAPS -> Kind.NAVIGATION
+        category == ApplicationInfo.CATEGORY_AUDIO -> Kind.MUSIC
+        category == ApplicationInfo.CATEGORY_VIDEO -> Kind.VIDEO
+        else -> Kind.OTHER
+    }
+
+    /** Messaging and social apps: not opened from the car while the phone is locked (the user's choice). */
+    val SOCIAL = setOf(
+        "com.whatsapp", "com.whatsapp.w4b", "com.instagram.android", "com.facebook.katana", "com.facebook.orca",
+        "com.facebook.lite", "com.facebook.mlite", "org.telegram.messenger", "org.thoughtcrime.securesms",
+        "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.twitter.android", "com.instagram.barcelona",
+        "com.snapchat.android", "com.discord", "com.google.android.apps.messaging", "com.samsung.android.messaging",
+        "com.linkedin.android", "com.pinterest", "com.reddit.frontpage", "com.bereal.ft", "com.kwai.video",
+    )
+    private val NAVIGATION = setOf("com.google.android.apps.maps", "com.waze", "app.comaps.google", "app.organicmaps", "com.here.app.maps", "com.sygic.aura")
+    private val MUSIC = setOf("com.spotify.music", "com.google.android.apps.youtube.music", "deezer.android.app", "com.amazon.mp3", "com.apple.android.music")
+    private val VIDEO = setOf("com.google.android.youtube", "com.netflix.mediaclient", "com.amazon.avod.thirdpartyclient", "com.disney.disneyplus", "com.hbo.hbonow", "com.globo.globotv")
+}

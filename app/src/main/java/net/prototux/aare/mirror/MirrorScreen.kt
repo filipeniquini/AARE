@@ -130,7 +130,7 @@ internal fun MirrorScreen(runtime: CarRuntime, driving: Boolean, modifier: Modif
 
 /** Whether the phone is locked (lock screen up or screen off), kept current from the screen and unlock broadcasts. */
 @Composable
-private fun rememberKeyguardLocked(): Boolean {
+internal fun rememberKeyguardLocked(): Boolean {
     val context = LocalContext.current
     val keyguard = remember { context.getSystemService(KeyguardManager::class.java) }
     var locked by remember { mutableStateOf(keyguard.isKeyguardLocked) }

@@ -75,6 +75,7 @@ import net.prototux.aare.notify.PhoneGuidance
 import net.prototux.aare.ui.theme.CarTheme
 import net.prototux.aare.ui.theme.LocalCarDimens
 import net.prototux.aare.ui.theme.LocalGtsStyle
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 
 /**
  * Root of the car screen: a rail on the driver's side and the content area.
@@ -192,9 +193,13 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
         phone?.let { RailApp(it, Icons.Rounded.Call, on(it)) { actions.openApp(it) } }
         settings?.takeIf { !tighterBar }?.let { RailApp(it, Icons.Rounded.Settings, on(it)) { actions.openApp(it) } }
     }
+    // A phone app (or the mirrored phone screen) has no back of its own on the car: add one by home.
+    val current = (state.screen as? CarScreen.App)?.let { state.app(it.appId) }
+    val needsBack = current?.kind == CarAppKind.PHONE_APP || current?.kind == CarAppKind.PHONE_SCREEN
     val menu: @Composable () -> Unit = {
         if (state.screen == CarScreen.Dashboard) RailButton(Icons.Rounded.Apps, stringResource(R.string.dash_menu_apps), selected = false) { actions.openLauncher() }
         else RailButton(Icons.Rounded.Home, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
+        if (needsBack) RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
     }
     val mic: @Composable () -> Unit = { MicButton(state.listening) { actions.assistant() } }
     val bell = { state.apps.firstOrNull { it.kind == CarAppKind.NOTIFICATIONS }?.let(actions::openApp) }
@@ -324,6 +329,9 @@ internal fun Dashboard(
                     }) { LatestNotification(latest, state.drivingRestricted) }
                 }
             }
+        } else if (LocalGtsStyle.current && !narrow) {
+            // GTS style: the map, with the car card over a 16:9 player beside it
+            GtsDashboard(state, actions, navMap, Modifier.fillMaxSize())
         } else if (narrow) {
             // small screens: one big card, media as a strip under it
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter)) {
@@ -362,19 +370,24 @@ internal fun Dashboard(
 }
 
 @Composable
-private fun Card(modifier: Modifier, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
+internal fun Card(
+    modifier: Modifier,
+    onClick: (() -> Unit)? = null,
+    /** A fill other than the plain card color, such as the GTS car card's grey. */
+    background: Brush? = null,
+    content: @Composable () -> Unit,
+) {
     val r = LocalCarDimens.current.cardRadius
     Box(
         modifier
             .clip(RoundedCornerShape(r))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .let { if (LocalGtsStyle.current) it.honeycomb(MaterialTheme.colorScheme.surfaceContainerHigh) else it }
+            .let { if (background != null) it.background(background) else it.background(MaterialTheme.colorScheme.surfaceContainer) }
             .let { if (onClick != null) it.carFocusHighlight(RoundedCornerShape(r)).clickable(onClick = onClick) else it },
     ) { content() }
 }
 
 @Composable
-private fun NavCard(state: CarUiState, actions: CarActions, navMap: @Composable (CarAppEntry, Modifier) -> Unit, modifier: Modifier) {
+internal fun NavCard(state: CarUiState, actions: CarActions, navMap: @Composable (CarAppEntry, Modifier) -> Unit, modifier: Modifier) {
     val nav = state.app(state.activeNavAppId)
     val guidance = state.phoneGuidance
     Card(modifier) {

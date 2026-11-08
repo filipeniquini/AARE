@@ -370,6 +370,8 @@ private fun ConnectionSettings(settings: Settings) {
     var resume by remember { mutableStateOf(settings.resumeMedia) }
     var cars by remember { mutableStateOf(settings.knownCars) }
     var carGps by remember { mutableStateOf(settings.carGpsForPhone) }
+    var obd by remember { mutableStateOf(settings.obdEnabled) }
+    var obdSim by remember { mutableStateOf(settings.obdSimulated) }
     val ctx = LocalContext.current
     val pinned = remember { net.prototux.aare.PinnedHeadUnits(ctx) }
     var pins by remember { mutableStateOf(pinned.all) }
@@ -388,6 +390,11 @@ private fun ConnectionSettings(settings: Settings) {
             if (carGps) Check(stringResource(R.string.setup_check_mock_location_title), stringResource(R.string.setup_check_mock_location_subtitle), PhoneLocationFeed.allowed(ctx)) {
                 ctx.startActivity(Intent(AndroidSettings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
             }
+        }
+        Section(stringResource(R.string.obd_section)) {
+            Toggle(stringResource(R.string.obd_toggle_title), stringResource(R.string.obd_toggle_subtitle), obd) { obd = it; settings.obdEnabled = it }
+            if (obd) Toggle(stringResource(R.string.obd_simulated_title), stringResource(R.string.obd_simulated_subtitle), obdSim) { obdSim = it; settings.obdSimulated = it }
+            Text(stringResource(R.string.obd_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Section(stringResource(R.string.setup_section_video)) {
             Toggle(stringResource(R.string.setup_toggle_60fps_title), stringResource(R.string.setup_toggle_60fps_subtitle), fps60) { fps60 = it; settings.prefer60fps = it }
@@ -452,7 +459,9 @@ private fun HeadUnitServerSettings(settings: Settings) {
     Section(stringResource(R.string.huserver_label)) {
         Toggle(stringResource(R.string.huserver_label), stringResource(R.string.huserver_toggle_subtitle), huServer) {
             huServer = it; settings.headUnitServer = it
-            if (it) ProjectionService.startIdleIfEnabled(ctx) else if (!ProjectionService.state.value.connected) ProjectionService.stop(ctx)
+            // Off during a session: the running service still has to close its listener, or it
+            // would keep the service (and its notification) alive after the session ends.
+            if (!it && !ProjectionService.state.value.connected) ProjectionService.stop(ctx) else ProjectionService.startIdleIfEnabled(ctx)
         }
         if (huServer) Toggle(stringResource(R.string.huserver_toggle_network_title), stringResource(R.string.huserver_toggle_network_subtitle), lan) {
             lan = it; settings.headUnitServerLan = it
@@ -625,6 +634,12 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
                 }
                 Text(stringResource(R.string.phone_hint_touch_capture),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                var a11yInCar by remember { mutableStateOf(settings.accessibilityInCarOnly) }
+                Toggle(stringResource(R.string.phone_a11y_in_car_title), stringResource(R.string.phone_a11y_in_car_subtitle), a11yInCar) {
+                    a11yInCar = it; settings.accessibilityInCarOnly = it
+                    // Turned on away from the car: off now, back on at the next connection.
+                    if (it && !ProjectionService.state.value.connected) net.prototux.aare.mirror.AccessibilitySwitch.carGone(ctx)
+                }
                 Spacer(Modifier.height(12.dp))
                 Choices(stringResource(R.string.phone_choice_quality), Settings.MIRROR_SCALES.map { "$it" to "$it%" }, "$mirrorScale") {
                     mirrorScale = it.toInt(); settings.mirrorScalePercent = mirrorScale
@@ -779,6 +794,7 @@ private fun AppsCard(settings: Settings) {
             AppGroup(stringResource(R.string.setup_app_group_aare))
             AppRow(null, stringResource(R.string.phone_section_title), stringResource(R.string.phone_app_row_subtitle), phoneScreen) { phoneScreen = it; settings.phoneScreen = it }
         }
+        if (l != null) PhoneAppsSection(settings, l)
         if (l != null) AppOrder(settings, l, hidden, phoneScreen)
         val unsupported by produceState(emptyList<UnsupportedCarApp>(), l) {
             if (l != null) value = withContext(Dispatchers.IO) { AndroidAutoApps.unsupported(ctx, l.carApps.map { it.packageName }) }
@@ -790,6 +806,63 @@ private fun AppsCard(settings: Settings) {
         }
         Text(stringResource(R.string.setup_hint_allowlist),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * The phone's other apps, opened on the car through a virtual display: the user ticks the ones
+ * the car's grid shows (none at first), and picks their size there.
+ */
+@Composable
+private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
+    val ctx = LocalContext.current
+    var enabled by remember { mutableStateOf(settings.phoneApps) }
+    var shown by remember { mutableStateOf(settings.phoneAppsShown) }
+    var dpi by remember { mutableStateOf(settings.phoneAppsDpi) }
+    var filter by remember { mutableStateOf("") }
+    // Chosen apps go first, as chosen when the page opened: rows don't jump while ticking.
+    val chosenAtOpen = remember { settings.phoneAppsShown }
+    // Apps the car already lists its own way (car UI, media player, messages) stay off this list,
+    // except video apps, which the car shows as the real app (CarRuntime.applyApps).
+    val taken = remember(l) { (l.carApps.map { it.packageName } + l.media.map { it.packageName } + l.messaging.map { it.packageName }).toSet() }
+    val apps by produceState<List<net.prototux.aare.apps.PhoneApps.App>?>(null) {
+        value = withContext(Dispatchers.IO) {
+            net.prototux.aare.apps.PhoneApps.query(ctx, 96)
+                .filter { it.component.packageName !in taken || net.prototux.aare.apps.PhoneApps.kind(it.component.packageName, it.category) == net.prototux.aare.apps.PhoneApps.Kind.VIDEO }
+                .sortedBy { it.label.lowercase() }
+        }
+    }
+    Section(stringResource(R.string.phone_apps_section)) {
+        Toggle(stringResource(R.string.phone_apps_toggle_title), stringResource(R.string.phone_apps_toggle_subtitle), enabled) { enabled = it; settings.phoneApps = it }
+        if (!enabled) return@Section
+        if (!net.prototux.aare.apps.PhoneApps.available()) {
+            Text(stringResource(R.string.apps_need_shizuku), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        Choices(stringResource(R.string.phone_apps_size), Settings.PHONE_APP_DPIS.mapIndexed { i, d -> "$d" to "${i + 1}" }, "$dpi") {
+            dpi = it.toInt(); settings.phoneAppsDpi = dpi
+        }
+        Text(stringResource(R.string.phone_apps_size_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AppGroup(stringResource(R.string.phone_apps_pick, shown.size))
+        androidx.compose.material3.OutlinedTextField(filter, { filter = it }, Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.phone_apps_search)) }, singleLine = true)
+        val list = apps
+        if (list == null) {
+            Text(stringResource(R.string.setup_app_list_loading), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+            return@Section
+        }
+        val social = stringResource(R.string.phone_apps_kind_social)
+        val other = stringResource(R.string.phone_apps_kind_other)
+        list.filter { filter.isBlank() || it.label.contains(filter.trim(), ignoreCase = true) }
+            // The chosen ones first, so they're easy to find again.
+            .sortedByDescending { it.component.packageName in chosenAtOpen }
+            .forEach { app ->
+                val pkg = app.component.packageName
+                val kind = if (net.prototux.aare.apps.PhoneApps.kind(pkg, app.category) == net.prototux.aare.apps.PhoneApps.Kind.SOCIAL) social else other
+                AppRow(app.icon, app.label, kind, pkg in shown) { on ->
+                    shown = if (on) shown + pkg else shown - pkg
+                    settings.phoneAppsShown = shown
+                }
+            }
     }
 }
 

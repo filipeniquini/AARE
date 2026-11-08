@@ -1,0 +1,274 @@
+package net.prototux.aare.obd
+
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothSocket
+import android.content.Context
+import java.io.IOException
+import java.util.UUID
+
+/**
+ * Talks to an OBD2 adapter (the user's V-LINK, an ELM327 over classic Bluetooth) and turns the
+ * car's answers into numbers. Ported from the user's dongle launcher (`Obd.java`), itself ported
+ * from their Painel GTS app, both tested on the Polo GTS. READ ONLY: mode 01 requests, nothing
+ * here writes to any of the car's modules. Everything blocks: call it off the main thread.
+ */
+interface ObdLink {
+    /** What to call it in the status line ("V-LINK", "Simulação"…). */
+    val name: String
+    /** Sends a text command and returns the answer up to the ELM's ">" prompt, or with [NO_ANSWER] appended. */
+    @Throws(IOException::class)
+    fun send(command: String, waitMs: Long): String
+    fun close()
+
+    companion object {
+        const val NO_ANSWER = "[no answer]"
+    }
+}
+
+/** Classic Bluetooth (the V-LINK is paired in the phone's settings, PIN 1234 or 0000). */
+@SuppressLint("MissingPermission")
+class BluetoothObdLink(device: BluetoothDevice) : ObdLink {
+    override val name: String = device.name ?: "OBD2"
+    private val socket: BluetoothSocket
+
+    init {
+        var s = device.createRfcommSocketToServiceRecord(SPP)
+        try {
+            s.connect()
+        } catch (e: IOException) {
+            s.close()
+            s = device.createInsecureRfcommSocketToServiceRecord(SPP)
+            s.connect()
+        }
+        socket = s
+    }
+
+    override fun send(command: String, waitMs: Long): String {
+        val input = socket.inputStream
+        val output = socket.outputStream
+        while (input.available() > 0) input.read() // leftovers
+        output.write("$command\r".toByteArray())
+        output.flush()
+        val answer = StringBuilder()
+        val deadline = System.currentTimeMillis() + waitMs
+        while (System.currentTimeMillis() < deadline) {
+            if (input.available() > 0) {
+                val c = input.read().toChar()
+                if (c == '>') return answer.toString()
+                answer.append(c)
+            } else {
+                try { Thread.sleep(5) } catch (_: InterruptedException) { throw IOException("stopped") }
+            }
+        }
+        return answer.toString() + ObdLink.NO_ANSWER
+    }
+
+    override fun close() {
+        runCatching { socket.close() }
+    }
+
+    companion object {
+        /** The Bluetooth "serial port" profile. */
+        val SPP: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+        private val ADAPTER_NAME = Regex("(?i)obd|elm|v-?link|vgate|icar|konnwei|vlink|scan")
+
+        /** Paired devices whose name looks like an OBD2 adapter. */
+        @SuppressLint("MissingPermission")
+        fun pairedAdapters(context: Context): List<BluetoothDevice> {
+            val adapter = context.getSystemService(BluetoothManager::class.java)?.adapter ?: return emptyList()
+            if (!adapter.isEnabled) return emptyList()
+            return adapter.bondedDevices.filter { d -> d.name?.let(ADAPTER_NAME::containsMatchIn) == true }
+        }
+
+        fun bluetoothOn(context: Context) = context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled == true
+    }
+}
+
+/** One snapshot of the car; null = the car doesn't report it (or hasn't yet). */
+data class ObdReadings(
+    val rpm: Float? = null,
+    /** km/h */
+    val speed: Float? = null,
+    /** bar above the outside air pressure (negative: vacuum). */
+    val boost: Float? = null,
+    /** °C */
+    val coolant: Float? = null,
+    val intakeAir: Float? = null,
+    /** V */
+    val battery: Float? = null,
+    /** % */
+    val fuel: Float? = null,
+    val ethanol: Float? = null,
+    val outside: Float? = null,
+    /** km/l right now, estimated. */
+    val economy: Float? = null,
+    /** km left on the tank, from the trip's average economy. */
+    val rangeKm: Float? = null,
+)
+
+/** The ELM327 language and the standard mode 01 formulas. */
+object Elm327 {
+    /** Reset, no echo, no extra line feeds, no spaces, no headers, automatic protocol. */
+    val SETUP = listOf("ATZ", "ATE0", "ATL0", "ATS0", "ATH0", "ATSP0")
+    /** Adaptive timing and the engine only (7E0): on the Polo two modules answer and the ELM waited for the timeout. */
+    val ENGINE_ONLY = listOf("ATAT2", "ATSH7E0")
+    const val ALL_MODULES = "ATSH7DF"
+
+    const val RPM = 0x0C
+    const val SPEED = 0x0D
+    const val MANIFOLD = 0x0B
+    const val COOLANT = 0x05
+    const val INTAKE_AIR = 0x0F
+    const val BAROMETRIC = 0x33
+    const val BATTERY = 0x42
+    const val FUEL = 0x2F
+    const val ETHANOL = 0x52
+    const val OUTSIDE = 0x46
+    const val LOAD = 0x04
+
+    /** What we read: fast ones every round, the others every few. */
+    val FAST = listOf(RPM, SPEED, MANIFOLD)
+    val READ = listOf(LOAD, COOLANT, MANIFOLD, RPM, SPEED, INTAKE_AIR, FUEL, BAROMETRIC, BATTERY, OUTSIDE, ETHANOL)
+
+    /** Prepares the adapter and finds which PIDs the car has (empty: the car didn't answer, ignition off). */
+    fun prepare(link: ObdLink): Set<Int> {
+        for (cmd in SETUP) link.send(cmd, if (cmd == "ATZ") 4_000 else 2_000)
+        val maps = mapOf(
+            0x00 to link.send("0100", 10_000),
+            0x20 to link.send("0120", 4_000),
+            0x40 to link.send("0140", 4_000),
+        )
+        return supported(maps)
+    }
+
+    /** Tries talking to the engine module only (faster). Returns whether it stayed so. */
+    fun engineOnly(link: ObdLink): Boolean {
+        for (cmd in ENGINE_ONLY) link.send(cmd, 2_000)
+        if (bytes(link.send("010C", 2_000), RPM) != null) return true
+        link.send(ALL_MODULES, 2_000)
+        return false
+    }
+
+    fun lines(answer: String): List<String> =
+        answer.replace("SEARCHING...", "").replace(" ", "").split('\r', '\n').map { it.trim() }.filter { it.isNotEmpty() }
+
+    /** Every module's answer to [pid] (engine and gearbox may both answer): one byte array each. */
+    fun allAnswers(answer: String, pid: Int): List<IntArray> {
+        val prefix = "41%02X".format(pid)
+        return lines(answer).mapNotNull { line ->
+            if (!line.startsWith(prefix)) return@mapNotNull null
+            val hex = line.substring(prefix.length)
+            if (hex.length < 2 || hex.length % 2 != 0) return@mapNotNull null
+            runCatching { IntArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16) } }.getOrNull()
+        }
+    }
+
+    fun bytes(answer: String, pid: Int): IntArray? = allAnswers(answer, pid).firstOrNull()
+
+    /** The standard formulas; null for a cut answer. */
+    fun value(pid: Int, b: IntArray): Float? {
+        if ((pid == RPM || pid == BATTERY) && b.size < 2) return null
+        if (b.isEmpty()) return null
+        val a = b[0].toFloat()
+        val ab = if (b.size >= 2) a * 256f + b[1] else a
+        return when (pid) {
+            RPM -> ab / 4f
+            SPEED, MANIFOLD, BAROMETRIC -> a
+            COOLANT, INTAKE_AIR, OUTSIDE -> a - 40f
+            LOAD, FUEL, ETHANOL -> a * 100f / 255f
+            BATTERY -> ab / 1000f
+            else -> null
+        }
+    }
+
+    /** The PIDs the car says it has (the answers to 0100, 0120 and 0140 are bit maps). */
+    fun supported(answers: Map<Int, String>): Set<Int> {
+        val pids = HashSet<Int>()
+        for ((base, answer) in answers) {
+            for (b in allAnswers(answer, base)) {
+                for (i in 0 until 32) {
+                    if (i / 8 >= b.size) break
+                    if (b[i / 8] and (0x80 shr (i % 8)) != 0) pids += base + i + 1
+                }
+            }
+        }
+        return pids
+    }
+
+    // The Polo GTS's 1.4 TSI (1395 cc), average volumetric efficiency.
+    private const val DISPLACEMENT_M3 = 0.001395f
+    private const val EFFICIENCY = 0.85f
+
+    /**
+     * km/l, estimated. The Polo reports no air flow (MAF): speed-density instead (air density in
+     * the manifold × displacement × efficiency × revs/2), and the air/fuel ratio from the ethanol
+     * share (Brazilian petrol already has about 27 %).
+     */
+    fun economy(v: Map<Int, Float>): Float? {
+        val speed = v[SPEED] ?: return null
+        val rpm = v[RPM] ?: return null
+        val manifold = v[MANIFOLD] ?: return null
+        if (speed < 3f || rpm < 400f) return null
+        val airK = (v[INTAKE_AIR] ?: 25f) + 273.15f
+        val density = manifold * 1000f / (287.05f * airK)
+        val airGs = density * DISPLACEMENT_M3 * EFFICIENCY * rpm / 120f * 1000f
+        val ethanol = (v[ETHANOL] ?: 27f) / 100f
+        val airFuel = 14.7f * (1 - ethanol) + 9.0f * ethanol
+        val fuelDensity = 0.74f * (1 - ethanol) + 0.79f * ethanol
+        val litresPerHour = airGs / airFuel * 3.6f / fuelDensity
+        return minOf(speed / litresPerHour, 99.9f)
+    }
+}
+
+/**
+ * Asks the car for its readings, one round at a time, keeping the last good value of each. The
+ * fast ones (revs, speed, boost) every round, the rest every [SLOW_EVERY] rounds. A silent
+ * adapter several times in a row means it dropped: [IOException].
+ */
+class ObdPoller(private val link: ObdLink, supported: Set<Int>, private val trip: Trip) {
+    private val fast = Elm327.FAST.filter { it in supported }
+    private val slow = Elm327.READ.filter { it in supported && it !in fast }
+    private val values = HashMap<Int, Float>()
+    private var round = 0
+    private var silences = 0
+
+    fun readRound(nowMs: Long): ObdReadings {
+        val pids = if (round % SLOW_EVERY == 0) fast + slow else fast
+        for (pid in pids) {
+            val answer = link.send("01%02X".format(pid), 1_500)
+            val x = Elm327.bytes(answer, pid)?.let { Elm327.value(pid, it) }
+            if (x == null) {
+                // An occasional NO DATA / STOPPED is normal; silence over and over is not.
+                if (answer.contains(ObdLink.NO_ANSWER) && ++silences >= SILENCES_TO_RECONNECT) throw IOException("the adapter stopped answering")
+                continue
+            }
+            silences = 0
+            values[pid] = x
+        }
+        round++
+        val manifold = values[Elm327.MANIFOLD]
+        val atmosphere = values[Elm327.BAROMETRIC] ?: 100f
+        val economy = Elm327.economy(values)
+        val readings = ObdReadings(
+            rpm = values[Elm327.RPM],
+            speed = values[Elm327.SPEED],
+            boost = manifold?.let { (it - atmosphere) / 100f }, // kPa -> bar
+            coolant = values[Elm327.COOLANT],
+            intakeAir = values[Elm327.INTAKE_AIR],
+            battery = values[Elm327.BATTERY],
+            fuel = values[Elm327.FUEL],
+            ethanol = values[Elm327.ETHANOL],
+            outside = values[Elm327.OUTSIDE],
+            economy = economy,
+        )
+        trip.add(readings, nowMs)
+        return readings.copy(rangeKm = trip.rangeKm(readings.fuel))
+    }
+
+    companion object {
+        const val SLOW_EVERY = 10
+        const val SILENCES_TO_RECONNECT = 8
+    }
+}

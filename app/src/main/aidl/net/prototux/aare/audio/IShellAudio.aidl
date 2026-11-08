@@ -16,6 +16,15 @@ interface IShellAudio {
      */
     boolean setAndroidAutoEnabled(boolean enabled) = 3;
 
+    /**
+     * Adds or removes one of AARE's own accessibility services ("package/class") in the enabled
+     * list, leaving every other app's service as it is. Returns whether settings succeeded.
+     */
+    boolean setOwnAccessibilityService(String component, boolean enabled) = 4;
+
+    /** The phone's own Bluetooth address (apps only get a placeholder), or null. */
+    String bluetoothAddress() = 5;
+
     /** Shizuku's user-service teardown call. */
     void destroy() = 16777114;
 }

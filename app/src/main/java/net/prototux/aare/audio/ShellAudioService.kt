@@ -103,6 +103,36 @@ class ShellAudioService : IShellAudio.Stub {
         false
     }
 
+    override fun setOwnAccessibilityService(component: String, enabled: Boolean): Boolean = try {
+        // Only AARE's own services: anything else is refused, whatever the caller asks.
+        require(component.startsWith("$AARE_PACKAGE/")) { "not one of AARE's services" }
+        val key = "enabled_accessibility_services"
+        val current = run("settings", "get", "secure", key)?.trim().orEmpty()
+        val list = current.split(':').filter { it.isNotBlank() && it != "null" }.toMutableList()
+        // Short and long forms name the same service.
+        val forms = setOf(component, component.replace("/.", "/$AARE_PACKAGE."))
+        list.removeAll { it in forms }
+        if (enabled) list += component
+        val written = if (list.isEmpty()) run("settings", "delete", "secure", key) else run("settings", "put", "secure", key, list.joinToString(":"))
+        val ok = written != null &&
+            (!enabled || run("settings", "put", "secure", "accessibility_enabled", "1") != null)
+        ok
+    } catch (e: Exception) {
+        Log.w(TAG, "accessibility switch failed", e)
+        false
+    }
+
+    override fun bluetoothAddress(): String? = runCatching {
+        run("settings", "get", "secure", "bluetooth_address")?.trim()?.takeIf { Regex("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}").matches(it) }
+    }.getOrNull()
+
+    /** Runs a fixed program with separate arguments (no shell); its output, or null if it failed. */
+    private fun run(vararg command: String): String? {
+        val p = ProcessBuilder(*command).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        return if (p.waitFor() == 0) out else { Log.w(TAG, "${command.first()} failed: $out"); null }
+    }
+
     override fun destroy() {
         stop()
         exitProcess(0)
@@ -131,5 +161,6 @@ class ShellAudioService : IShellAudio.Stub {
         const val TAG = "AareShellAudio"
         const val SHELL_PACKAGE = "com.android.shell"
         const val ANDROID_AUTO_PACKAGE = AndroidAutoSwitch.PACKAGE
+        const val AARE_PACKAGE = "net.prototux.aare"
     }
 }

@@ -115,6 +115,39 @@ class Settings(context: Context) {
      * Resolution of the mirrored phone screen, in percent of the car area it fills. Lower is
      * blurrier but lighter on the phone, which then lags less in heavy moments.
      */
+    /** Every phone app in the car's app grid, opened on a virtual display (needs Shizuku). */
+    var phoneApps: Boolean
+        get() = prefs.getBoolean("phone_apps", true)
+        set(v) = prefs.edit { putBoolean("phone_apps", v) }
+
+    /** AARE's accessibility service only while the car is connected (banks refuse it otherwise). Off: the user decides. */
+    var accessibilityInCarOnly: Boolean
+        get() = prefs.getBoolean("a11y_in_car_only", false)
+        set(v) = prefs.edit { putBoolean("a11y_in_car_only", v) }
+
+    /** The phone apps chosen for the car's grid (packages); the others stay off it. Empty at first. */
+    var phoneAppsShown: Set<String>
+        get() = prefs.getStringSet("phone_apps_shown", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("phone_apps_shown", v) }
+
+    /**
+     * Screen density the phone apps get on the car, separate from the car UI's: apps lay out by
+     * their width in dp, and the car's own density made some of them tablet-sized and tiny.
+     */
+    var phoneAppsDpi: Int
+        get() = prefs.getInt("phone_apps_dpi", 240)
+        set(v) = prefs.edit { putInt("phone_apps_dpi", v) }
+
+    /** Read the OBD2 adapter (the V-LINK) while connected, for the GTS car card. */
+    var obdEnabled: Boolean
+        get() = prefs.getBoolean("obd_enabled", true)
+        set(v) = prefs.edit { putBoolean("obd_enabled", v) }
+
+    /** A pretend adapter that "drives" a loop, for trying the car card without the car. */
+    var obdSimulated: Boolean
+        get() = prefs.getBoolean("obd_simulated", false)
+        set(v) = prefs.edit { putBoolean("obd_simulated", v) }
+
     var mirrorScalePercent: Int
         get() = prefs.getInt("mirror_scale_percent", 100)
         set(v) = prefs.edit { putInt("mirror_scale_percent", v) }
@@ -216,6 +249,8 @@ class Settings(context: Context) {
         const val KEY_UI_SCALE = "ui_scale_percent"
         /** The sizes offered for the car screen's interface, largest first. */
         val UI_SCALES = listOf(100, 90, 80, 70)
+        /** Phone app sizes on the car (density in dpi), smallest first. */
+        val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
         /** The resolutions offered for the mirrored phone screen, sharpest first. */
         val MIRROR_SCALES = listOf(100, 75, 50)
         const val WALLPAPER_CUSTOM = "custom"

@@ -123,6 +123,40 @@ class VideoFocusFallbackTest {
         assertEquals(1, hu.videoStart!!.sessionId)
     }
 
+    /** The VW Play's reverse camera: frames in flight are dropped unacked, then the car hands the screen back. */
+    @Test
+    fun videoComesBackAfterTheCarDroppedFramesUnacked() {
+        connect(answerVideoFocus = true)
+        assertTrue(hu.firstVideoFrame.await(5, TimeUnit.SECONDS))
+
+        hu.dropVideoUnacked = true
+        Thread.sleep(300) // the window fills with frames the car will never ack
+        hu.requestFocusNative()
+        Thread.sleep(300)
+        hu.dropVideoUnacked = false
+        val before = hu.videoFrames.get()
+        hu.requestFocusProjected()
+
+        Thread.sleep(1_000)
+        assertTrue("frames should flow again after the camera", hu.videoFrames.get() > before + 10)
+    }
+
+    /** Same, but the car never says it took the screen: the stall check recovers. */
+    @Test
+    fun videoRecoversFromASilentStall() {
+        connect(answerVideoFocus = true)
+        assertTrue(hu.firstVideoFrame.await(5, TimeUnit.SECONDS))
+
+        hu.dropVideoUnacked = true
+        Thread.sleep(300)
+        hu.dropVideoUnacked = false
+        val before = hu.videoFrames.get()
+
+        Thread.sleep(3_500)
+        assertTrue("frames should flow again once the stall is noticed", hu.videoFrames.get() > before + 10)
+        assertTrue(video!!.stalls >= 1)
+    }
+
     @Test
     fun carAnsweringFocusNeedsNoFallback() {
         connect(answerVideoFocus = true)

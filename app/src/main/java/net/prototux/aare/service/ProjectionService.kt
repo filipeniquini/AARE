@@ -295,6 +295,13 @@ class ProjectionService : Service() {
             } else {
                 usbAccessory = null
                 usbRetries = 0
+                // The user chose to let go of the screen-capture consent with the car (2026-11-08): it
+                // would keep the service and its notification alive until the next drive. Asked again then.
+                // Not while USB retries above are pending: a dropped link that comes back keeps it.
+                projection?.let {
+                    log("car gone: letting go of the screen-capture permission")
+                    it.stop()
+                }
                 main.postDelayed({ if (idle()) stopEverything() }, 3_000)
             }
         }

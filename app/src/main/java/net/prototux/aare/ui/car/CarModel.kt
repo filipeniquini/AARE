@@ -11,7 +11,7 @@ import net.prototux.aare.car.Weather
 import net.prototux.aare.notify.PhoneGuidance
 
 /** What kind of app an entry in the launcher is, which decides where its UI goes. */
-enum class CarAppKind { NAVIGATION, MEDIA, TEMPLATED, ASSISTANT, MESSAGING, PHONE_SCREEN, PHONE, SETTINGS, NOTIFICATIONS }
+enum class CarAppKind { NAVIGATION, MEDIA, TEMPLATED, ASSISTANT, MESSAGING, PHONE_SCREEN, PHONE, SETTINGS, NOTIFICATIONS, PHONE_APP }
 
 /** One launchable app on the car screen. */
 @Stable
@@ -115,7 +115,7 @@ class CarUiState {
     var darkBar by mutableStateOf(false)
     /** The CarPlay-style layout (an easter egg, *Settings > Style*). */
     var carPlayStyle by mutableStateOf(false)
-    /** The GTS look: always dark, red accent, Barlow and a honeycomb behind the dashboard (*Settings > Style*). */
+    /** The GTS look: always dark, red accent, Barlow and its own home screen layout (*Settings > Style*). */
     var gtsStyle by mutableStateOf(false)
     /** The rail runs along the bottom instead of a side. */
     var railBottom by mutableStateOf(false)
@@ -141,4 +141,6 @@ interface CarActions {
     fun endCall()
     /** Navigate to a place (an address or a name) in the car's navigation app. */
     fun navigateTo(place: String)
+    /** Back, as the car's own back key: inside the app on screen first. */
+    fun back() {}
 }

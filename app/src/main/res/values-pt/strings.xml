@@ -254,6 +254,7 @@
     <!-- dash: car shell / dashboard chrome -->
     <string name="dash_menu_apps">Aplicações</string>
     <string name="dash_menu_home">Início</string>
+    <string name="dash_menu_back">Voltar</string>
 
     <!-- nav: navigation feature (dashboard card and templates) -->
     <string name="nav_dashboard_no_app_title">Nenhuma aplicação de navegação</string>
@@ -329,4 +330,35 @@
 
     <!-- search: media search view -->
     <string name="search_parked_only">A pesquisa está disponível quando estacionado</string>
+
+    <!-- GTS home screen: the car card's readings -->
+    <string name="gts_water">Água</string>
+    <string name="gts_boost">Turbo</string>
+    <string name="gts_battery">Bateria</string>
+    <string name="gts_fuel">Tanque</string>
+    <string name="gts_range">Autonomia</string>
+    <string name="gts_consumption">Consumo</string>
+    <string name="apps_locked_social">Desbloqueie o telemóvel para abrir aplicações de mensagens e redes sociais no carro.</string>
+    <string name="apps_driving_paused">Em pausa durante a condução: só navegação e música aparecem. O som continua.</string>
+    <string name="apps_need_shizuku">As aplicações do telemóvel no ecrã do carro precisam do Shizuku a funcionar e autorizado para a AARE (página Áudio do carro).</string>
+    <string name="phone_a11y_in_car_title">Serviço de toque só no carro</string>
+    <string name="phone_a11y_in_car_subtitle">A AARE liga o seu serviço de acessibilidade quando o carro se liga e desliga-o quando sai (pelo Shizuku). Aplicações de banco recusam-se a abrir enquanto está ligado.</string>
+    <string name="phone_apps_section">Aplicações do telemóvel no carro</string>
+    <string name="phone_apps_toggle_title">Abrir aplicações do telemóvel no carro</string>
+    <string name="phone_apps_toggle_subtitle">Qualquer aplicação, em ecrã inteiro no carro, sem aparecer no telemóvel (precisa do Shizuku). Só as marcadas abaixo aparecem na grade do carro.</string>
+    <string name="phone_apps_size">Tamanho das aplicações no carro</string>
+    <string name="phone_apps_size_hint">1 cabe mais coisa no ecrã, 8 deixa tudo maior. Vale na próxima vez que a aplicação aparecer.</string>
+    <string name="phone_apps_pick">Aplicações na grade do carro (%1$d escolhidas)</string>
+    <string name="phone_apps_search">Pesquisar aplicações</string>
+    <string name="phone_apps_kind_social">Mensagens ou rede social: bloqueada com o telemóvel bloqueado</string>
+    <string name="phone_apps_kind_other">Aplicação do telemóvel</string>
+    <string name="obd_section">Dados do carro (OBD2)</string>
+    <string name="obd_toggle_title">Ler o adaptador OBD2</string>
+    <string name="obd_toggle_subtitle">Velocidade, rotação, temperaturas e combustível de um adaptador Bluetooth emparelhado (V-LINK, ELM327) para o cartão do carro GTS. Só leitura.</string>
+    <string name="obd_simulated_title">Adaptador de simulação</string>
+    <string name="obd_simulated_subtitle">Um carro de mentira que anda em ciclo, para testar o cartão sem o carro</string>
+    <string name="obd_hint">O adaptador aceita uma aplicação de cada vez: o AARE só o usa enquanto está ligado ao carro. Vale na próxima ligação.</string>
+    <string name="obd_searching">À procura do adaptador OBD2</string>
+    <string name="obd_no_car">Adaptador encontrado, o carro não responde (ignição desligada?)</string>
+    <string name="obd_gave_up">Sem adaptador OBD2</string>
 </resources>

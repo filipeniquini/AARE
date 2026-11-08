@@ -165,7 +165,12 @@ class SessionLoopbackTest {
         assertEquals(AudioFocusStateType.AUDIO_FOCUS_STATE_GAIN, audioFocus.poll(3, TimeUnit.SECONDS)!!.focusState)
         val media = audio.first { it.streamType.name.endsWith("MEDIA") }
         media.startPlayback()
-        repeat(5) { assertTrue(media.sendPcm(ByteArray(10 + 3840), 10, 3840, it * 20_000L)) }
+        // Within the car's window only: wait for its acks between chunks, as a real stream does.
+        repeat(5) {
+            val until = System.currentTimeMillis() + 2_000
+            while (!media.hasRoom && System.currentTimeMillis() < until) Thread.sleep(5)
+            assertTrue(media.sendPcm(ByteArray(10 + 3840), 10, 3840, it * 20_000L))
+        }
         Thread.sleep(300)
         assertEquals(5, hu.audioChunks.get())
 

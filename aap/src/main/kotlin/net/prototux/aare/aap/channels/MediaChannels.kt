@@ -44,13 +44,18 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     private val sessionCounter = AtomicInteger(0)
     @Volatile protected var mediaSession = 0
     protected val unacked = AtomicInteger(0)
+    /** Messages sent and not acked yet (diagnostics). */
+    val inFlight: Int get() = unacked.get()
+    /** The configuration indices the head unit listed in its Config (diagnostics). */
+    val offeredConfigs: List<Int> get() = configIndices
     /**
      * Head units on newer protocol versions don't ack audio. If no ack ever comes after a
      * generous number of messages, we stop counting rather than stall the stream.
      */
     @Volatile var ackless = false
         private set
-    @Volatile private var ackSeen = false
+    @Volatile protected var ackSeen = false
+        private set
     /** Acks the head unit has sent on this channel. */
     @Volatile var acksReceived = 0L
         private set
@@ -112,6 +117,9 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
             unacked.set(0)
         }
     }
+
+    /** Forgets the messages in flight, for when the head unit has dropped them without acking. */
+    protected fun resetWindow() = unacked.set(0)
 
     /** Whether the in-flight window has room for one more message. */
     protected fun canSend() = ackless || unacked.get() < maxUnacked
@@ -277,6 +285,12 @@ class VideoChannel(
             startStream(chosenIndex)
             listener.onVideoStart(chosenIndex, config)
         }
+        if (changed) {
+            // Frames in flight when the car switched screens (reverse camera, its own menus) are
+            // never acked: it dropped them. Left counted, they kept the ack window full forever and
+            // the picture never came back (VW Play, 2026-11-08). Start the window afresh.
+            synchronized(lock) { resetWindow(); sentAt.clear(); lastAckAt = System.nanoTime() }
+        }
         if (projected) {
             synchronized(lock) { needKeyFrame = true; while (pending.isNotEmpty()) pending.removeFirst().let { it.recycle(it.buf) } }
             // resend codec config: some head units reset their decoder when focus returns
@@ -327,12 +341,34 @@ class VideoChannel(
                 return
             }
             pending.addLast(Pending(buf, offset, length, ptsUs, keyFrame, recycle))
+            // Safety net: a full window with no ack for a long while means the car dropped those
+            // frames (a screen switch we weren't told about). Resend from a key frame.
+            val now = System.nanoTime()
+            if (!canSend() && ackSeen && now - lastAckAt > STALL_NS) {
+                stalls++
+                resetWindow(); sentAt.clear()
+                lastAckAt = now
+                if (!keyFrame) {
+                    while (pending.isNotEmpty()) { pending.removeFirst().let { it.recycle(it.buf) }; droppedFrames++ }
+                    needKeyFrame = true
+                    listener.onKeyFrameNeeded()
+                    pendingFrames = 0
+                    return
+                }
+            }
             pump()
         }
     }
 
+    /** When the last ack came (or the window was last reset), for the stall check in [sendFrame]. */
+    private var lastAckAt = System.nanoTime()
+    /** Times the window was found stuck and reset. */
+    @Volatile var stalls = 0
+        private set
+
     override fun onAcked() {
         synchronized(lock) {
+            lastAckAt = System.nanoTime()
             // Acks are cumulative: whatever is beyond the in-flight count has been acked, and the
             // newest of those gives the latency.
             var acked = -1L
@@ -364,6 +400,8 @@ class VideoChannel(
     companion object {
         /** About a quarter second at 30 fps: more than that and we're just adding latency. */
         const val MAX_PENDING = 8
+        /** No ack for this long with the window full: the car has dropped what's in flight. */
+        const val STALL_NS = 2_000_000_000L
     }
 }
 
@@ -411,18 +449,26 @@ class AudioChannel(service: Service, private val listener: Listener? = null) :
      * when the head unit is too far behind: audio must stay in real time.
      */
     /** Whether [sendPcm] would send a chunk now rather than drop it. */
-    val hasRoom: Boolean get() = started && (ackless || unacked.get() < maxUnacked + SLACK)
+    val hasRoom: Boolean get() = started && (ackless || unacked.get() < window)
+
+    /** The car's window, but never more than [MAX_IN_FLIGHT]: the VW Play says 4096 and then can't take it. */
+    private val window: Int get() = minOf(maxUnacked + SLACK, MAX_IN_FLIGHT)
 
     fun sendPcm(buf: ByteArray, offset: Int, length: Int, timestampUs: Long): Boolean {
         if (!started) return false
-        if (!ackless && unacked.get() >= maxUnacked + SLACK) { droppedChunks++; noteAttempt(); return false }
+        if (!ackless && unacked.get() >= window) { droppedChunks++; noteAttempt(); return false }
         sendData(buf, offset, length, timestampUs, Priority.AUDIO)
         return true
     }
 
     companion object {
-        /** Head units ack audio in bursts; allow a little beyond the window before dropping. */
-        const val SLACK = 4
+        /**
+         * Beyond the head unit's window. Was 4 ("head units ack audio in bursts"), but the VW Play
+         * hung for good right after the first audio chunks (2026-11-08): never exceed its window.
+         */
+        const val SLACK = 0
+        /** At most this many audio chunks waiting for an ack (8 × 20 ms), whatever the head unit says. */
+        const val MAX_IN_FLIGHT = 8
     }
 }
 

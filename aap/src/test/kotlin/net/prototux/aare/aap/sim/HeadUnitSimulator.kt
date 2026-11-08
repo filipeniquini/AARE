@@ -94,6 +94,9 @@ class HeadUnitSimulator(
     var phoneRequest: ServiceDiscoveryRequest? = null
     val openedChannels = ConcurrentHashMap.newKeySet<Int>()
     val videoFrames = AtomicInteger()
+    /** While true, video frames are taken but never acked (the car is showing its own screen). */
+    @Volatile var dropVideoUnacked = false
+    val droppedUnacked = AtomicInteger()
     val videoBytes = AtomicInteger()
     val codecConfigs = AtomicInteger()
     val audioChunks = AtomicInteger()
@@ -217,6 +220,8 @@ class HeadUnitSimulator(
                     audioChunks.incrementAndGet()
                 }
                 val session = if (m.channel == video) videoStart?.sessionId ?: 0 else 0
+                // Like the VW Play behind its reverse camera: video arrives and is dropped unacked.
+                if (m.channel == video && dropVideoUnacked) { droppedUnacked.incrementAndGet(); return }
                 send(m.channel, MediaMsg.ACK, Ack.newBuilder().setSessionId(session).setAck(1).build())
             }
         }

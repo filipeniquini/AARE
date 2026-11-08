@@ -78,6 +78,20 @@ class CarAudioOut(
         var lastSound = 0L
         playing = false
         var frames = 0L
+        val clockStartUs = System.nanoTime() / 1_000
+        var logged = 0
+        // Media goes out paced to real time; guidance keeps its start (queued while waiting for focus).
+        val realTime = channel.streamType == AudioStreamType.AUDIO_STREAM_MEDIA
+        val chunkNs = chunk / (2L * channels) * 1_000_000_000L / rate
+        var nextSendNs = 0L
+        var noRoom = 0
+        fun pace() {
+            val now = System.nanoTime()
+            if (nextSendNs == 0L || now - nextSendNs > 200_000_000L) nextSendNs = now // (re)start, or fell behind: no catch-up burst
+            val wait = nextSendNs - now
+            if (wait > 0) Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
+            nextSendNs += chunkNs * 9 / 10 // a little faster than real time, so a capture backlog drains slowly
+        }
         // Chunks (with their timestamp) waiting for focus or for room in the car's ack window.
         val queued = ArrayDeque<Pair<ByteArray, Long>>()
         fun queue(ts: Long) {
@@ -96,7 +110,10 @@ class CarAudioOut(
                 if (got < chunk) continue
                 val now = SystemClock.elapsedRealtime()
                 if (!isSilent(buf, 10, chunk)) lastSound = now
-                val ts = frames * 1_000_000L / rate
+                // On the same clock as the video (the encoder stamps System.nanoTime), as Android Auto
+                // does: a stream starting at 0 µs next to video at ~10^12 µs is a suspect for the
+                // VW Play hanging right after the first audio chunk (2026-11-08).
+                val ts = clockStartUs + frames * 1_000_000L / rate
                 frames += chunk / (2 * channels)
                 if (!playing && lastSound == now) {
                     focus.request(true)
@@ -121,6 +138,19 @@ class CarAudioOut(
                 } else if (!focus.granted) {
                     // Focus lost mid-stream: drop, stale sound later would be worse.
                     queued.clear()
+                    continue
+                }
+                if (logged < LOG_CHUNKS) {
+                    logged++
+                    net.prototux.aare.DiagLog.add("audio ${channel.streamType} chunk $logged: ${chunk} bytes ts $ts, in flight ${channel.inFlight}/${channel.maxUnacked}, queued ${queued.size}, acks ${channel.acksReceived}")
+                }
+                if (realTime) {
+                    // Music: never faster than real time and never a burst. The VW Play hung for good
+                    // right after a burst of 12 chunks at stream start (2026-11-08); Android Auto
+                    // sends one chunk per chunk of time. Late or no room: drop, stay live.
+                    queued.clear()
+                    pace()
+                    if (channel.hasRoom) channel.sendPcm(buf.copyOf(), 10, chunk, ts) else noRoom++
                     continue
                 }
                 if (queued.isEmpty() && channel.hasRoom) {
@@ -154,6 +184,8 @@ class CarAudioOut(
     companion object {
         private const val TAG = "AareAudioOut"
         private const val SILENCE_MS = 3_000L
+        /** Chunks described in the connection log at each stream start (car diagnostics). */
+        private const val LOG_CHUNKS = 12
         /** About 1 s of 20 ms chunks kept while waiting for the car's focus grant. */
         private const val MAX_QUEUED = 50
         /** Backlog kept once media plays (~240 ms). */

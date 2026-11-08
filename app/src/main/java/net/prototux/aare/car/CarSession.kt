@@ -134,6 +134,8 @@ class CarSession(
     @Volatile private var mediaFocus = false
     /** The car lets navigation voice play (but not music). */
     @Volatile private var guidanceFocusState = false
+    /** Audio focus notifications the car has sent this session, answers or not. */
+    @Volatile private var audioFocusAnswers = 0
     @Volatile var headUnitName: String = ""
         private set
     @Volatile var videoDescription: String = ""
@@ -150,6 +152,9 @@ class CarSession(
             navBridge?.updatePhone(g)
         }
         runtime.start()
+        // The car's own readings for the GTS car card, from the OBD2 adapter (V-LINK) while connected.
+        if (settings.obdEnabled) net.prototux.aare.obd.ObdReader.start(context, settings.obdSimulated)
+        if (settings.accessibilityInCarOnly && settings.phoneScreen) net.prototux.aare.mirror.AccessibilitySwitch.carConnected(context)
         settings.registerListener(uiScaleListener)
         listener.onStatus(this, context.getString(R.string.notif_status_connecting_to, transport.name))
     }
@@ -211,13 +216,37 @@ class CarSession(
                 s.hasNavigationStatusService() -> navStatus = NavigationStatusChannel(s).also { channels += it }
                 s.hasMediaPlaybackService() -> playback = MediaPlaybackChannel(s).also { channels += it }
                 s.hasPhoneStatusService() -> phoneStatus = net.prototux.aare.aap.channels.PhoneStatusChannel(s) { phoneBridge?.onInput(it) }.also { channels += it }
-                s.hasBluetoothService() -> channels += BluetoothChannel(s, object : BluetoothChannel.Listener {})
+                s.hasBluetoothService() -> channels += BluetoothChannel(s, object : BluetoothChannel.Listener {
+                    override fun onPairingResponse(alreadyPaired: Boolean, ok: Boolean) {
+                        DiagLog.add("bluetooth: car answered pairing, already paired=$alreadyPaired, ok=$ok")
+                    }
+                }).also { bluetooth = it }
             }
         }
         return channels
     }
 
+    /** The car's Bluetooth service, to tell it which phone this is (see [linkBluetooth]). */
+    private var bluetooth: BluetoothChannel? = null
+
+    /**
+     * Tells the car the phone's Bluetooth address, as Android Auto does: the car then knows the
+     * projection and its Bluetooth phone ("Pixel 7 Pro Filipe") are the same device. Without it
+     * the VW Play listed them as two devices, and hung as soon as projected sound started (2026-11-08).
+     * The address is hidden from apps: read through Shizuku.
+     */
+    private fun linkBluetooth() {
+        val bt = bluetooth ?: return
+        Thread({
+            val address = net.prototux.aare.audio.ShellOnce.call(context) { it.bluetoothAddress() }
+            if (address == null) { DiagLog.add("bluetooth: phone address unknown (Shizuku?), not sent"); return@Thread }
+            DiagLog.add("bluetooth: car ${bt.carAddress}, methods ${bt.methods}; sending the phone's address")
+            runCatching { bt.requestPairing(address) }
+        }, "aare-bt-link").start()
+    }
+
     override fun onRunning(session: AapSession) {
+        linkBluetooth()
         main.post {
             listener.onStatus(this, context.getString(R.string.notif_status_projecting_to, headUnitName))
             navStatus?.let { navBridge = NavStatusBridge(it, { m, w, h -> turnImage(m, w, h) }, ::png) }
@@ -238,6 +267,7 @@ class CarSession(
     }
 
     override fun onAudioFocus(session: AapSession, notification: AudioFocusNotification) {
+        audioFocusAnswers++
         val state = notification.focusState
         // Ducking keeps the music going: the head unit lowers it itself.
         mediaFocus = state == AudioFocusStateType.AUDIO_FOCUS_STATE_GAIN || state == AudioFocusStateType.AUDIO_FOCUS_STATE_GAIN_MEDIA_ONLY ||
@@ -305,6 +335,7 @@ class CarSession(
             main.post {
                 encoder?.setSuspended(!projected)
                 if (projected) encoder?.requestKeyFrame()
+                reportVideoAgain()
             }
         }
 
@@ -347,13 +378,20 @@ class CarSession(
 
     /** What a black car screen needs explained: kept in the connection log, which survives the drive home. */
     private val videoReport = object : Runnable {
-        private var left = VIDEO_REPORTS
+        var left = VIDEO_REPORTS
         override fun run() {
             val ch = video ?: return
             DiagLog.add("video: $framesEncoded frames encoded, ${ch.acksReceived} acks, ${ch.droppedFrames} dropped, ${ch.pendingFrames} waiting (window ${ch.maxUnacked}" +
-                "${if (ch.ackless) ", no acks" else ""}), ack ${ch.ackLatencyMs} ms, focused=${ch.focused}")
+                "${if (ch.ackless) ", no acks" else ""}), ack ${ch.ackLatencyMs} ms, focused=${ch.focused}, ${ch.stalls} stalls")
             if (--left > 0) main.postDelayed(this, VIDEO_REPORT_MS)
         }
+    }
+
+    /** A few more video reports, after the car switched screens (reverse camera, its own menus). */
+    private fun reportVideoAgain() {
+        main.removeCallbacks(videoReport)
+        videoReport.left = 4
+        main.postDelayed(videoReport, VIDEO_REPORT_MS)
     }
 
     private fun startProjection(config: VideoConfiguration, rightHandDrive: Boolean) {
@@ -559,6 +597,8 @@ class CarSession(
             }
         }
         if (!guidance) DiagLog.add("car audio: ${method.label}")
+        DiagLog.add("audio ${channel.streamType}: car offers ${channel.service.mediaSinkService.audioConfigsList.joinToString { "${it.samplingRate}Hz/${it.numberOfBits}bit/${it.numberOfChannels}ch" }}, " +
+            "config indices ${channel.offeredConfigs}, window ${channel.maxUnacked}; using ${rate}Hz/${ch}ch")
         audioOuts.remove(channel.streamType)?.stop()
         audioOuts[channel.streamType] = CarAudioOut(source, channel, if (guidance) guidanceFocus else mediaFocusRequests, onFailed = {
             main.post {
@@ -573,10 +613,26 @@ class CarSession(
     private val mediaFocusRequests = object : CarAudioOut.Focus {
         override fun request(playing: Boolean) {
             mediaPlaying = playing
-            if (playing) aap.requestAudioFocus(AudioFocusRequestType.AUDIO_FOCUS_GAIN)
-            else if (!guidancePlaying) aap.requestAudioFocus(AudioFocusRequestType.AUDIO_FOCUS_RELEASE)
+            if (playing) {
+                aap.requestAudioFocus(AudioFocusRequestType.AUDIO_FOCUS_GAIN)
+                assumeFocusIfUnanswered(audioFocusAnswers)
+            } else if (!guidancePlaying) aap.requestAudioFocus(AudioFocusRequestType.AUDIO_FOCUS_RELEASE)
         }
         override val granted: Boolean get() = mediaFocus
+    }
+
+    /**
+     * The VW Play (Visteon MIB Regio) never answers an audio focus request, and the sound waited
+     * for that answer forever: nothing played (2026-11-08). With no answer at all after a moment,
+     * play as if granted. Any answer the car does send, a refusal included, still decides.
+     */
+    private fun assumeFocusIfUnanswered(answersBefore: Int) {
+        main.postDelayed({
+            if (audioFocusAnswers == answersBefore && mediaPlaying && !mediaFocus) {
+                DiagLog.add("car audio: the car didn't answer the audio focus request, playing anyway")
+                mediaFocus = true
+            }
+        }, AUDIO_FOCUS_ANSWER_MS)
     }
 
     /** Navigation voice: transient focus that ducks the car's other sound, then back to the music if it plays. */
@@ -649,6 +705,8 @@ class CarSession(
     // ------------------------------------------------------------------ teardown
 
     private fun teardown() {
+        net.prototux.aare.obd.ObdReader.stop(context)
+        if (settings.accessibilityInCarOnly) net.prototux.aare.mirror.AccessibilitySwitch.carGone(context)
         main.removeCallbacks(focusFallback)
         main.removeCallbacks(videoReport)
         net.prototux.aare.notify.CarNotificationListener.sink = null
@@ -716,6 +774,8 @@ class CarSession(
 
         /** How long the car gets to answer the video focus request before we send video anyway. */
         private const val FOCUS_ANSWER_MS = 3_000L
+        /** How long the car gets to answer an audio focus request before the sound plays anyway. */
+        private const val AUDIO_FOCUS_ANSWER_MS = 1_000L
         private const val VIDEO_REPORT_MS = 5_000L
         /** A minute of reports: enough for the first seconds of a session, without flooding the log. */
         private const val VIDEO_REPORTS = 12

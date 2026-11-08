@@ -166,7 +166,7 @@ private val CarShapes = Shapes(
     extraLarge = RoundedCornerShape(36.dp),
 )
 
-/** Whether the car screen uses the GTS style (its cards get the honeycomb). */
+/** Whether the car screen uses the GTS style (its own home screen layout). */
 val LocalGtsStyle = staticCompositionLocalOf { false }
 
 @Composable

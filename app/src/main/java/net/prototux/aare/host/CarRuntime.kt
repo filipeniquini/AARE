@@ -35,6 +35,8 @@ import net.prototux.aare.car.Calls
 import net.prototux.aare.car.DashboardInfo
 import net.prototux.aare.media.MediaHub
 import net.prototux.aare.mirror.MirrorScreen
+import net.prototux.aare.apps.PhoneAppScreen
+import net.prototux.aare.apps.PhoneApps
 import net.prototux.aare.notify.CarNotificationListener
 import net.prototux.aare.notify.MessagingScreen
 import net.prototux.aare.notify.PhoneGuidance
@@ -289,7 +291,7 @@ class CarRuntime(
             "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
-            "hidden_apps", "phone_screen", "assistant_pkg", "app_order" -> main.post { refreshApps() }
+            "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown" -> main.post { refreshApps() }
         }
     }
 
@@ -340,6 +342,7 @@ class CarRuntime(
         connections.clear()
         clusterConnections.values.forEach { it.release() }
         clusterConnections.clear()
+        if (running.isEmpty()) PhoneApps.release()
         if (ownsMedia) media.release()
     }
 
@@ -349,11 +352,21 @@ class CarRuntime(
             val (found, messaging) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 CarAppCatalog.query(context) to AndroidAutoApps.messagingApps(context)
             }
-            applyApps(found, messaging)
+            // Only the phone apps the user picked for the car (Apps page on the phone).
+            val chosen = settings.phoneAppsShown
+            val all = if (settings.phoneApps && chosen.isNotEmpty() && PhoneApps.available())
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    runCatching { PhoneApps.query(context, PHONE_APP_ICON_PX) }.getOrDefault(emptyList()).filter { it.component.packageName in chosen }
+                }
+            else emptyList()
+            applyApps(found, messaging, all)
         }
     }
 
-    private fun applyApps(found: List<CarAppInfo>, messaging: List<PhoneApp>) {
+    /** Phone apps shown on the virtual display, by entry id. */
+    private val phoneApps = HashMap<String, PhoneApps.App>()
+
+    private fun applyApps(found: List<CarAppInfo>, messaging: List<PhoneApp>, all: List<PhoneApps.App> = emptyList()) {
         val hidden = settings.hiddenApps
         val assistantPkg = assistantPackage()
         carApps.clear()
@@ -387,6 +400,22 @@ class CarRuntime(
         for (m in messaging) {
             if (m.packageName in hidden || entries.any { it.packageName == m.packageName }) continue
             entries += CarAppEntry(messagingId(m.packageName), m.packageName, m.label, m.icon, CarAppKind.MESSAGING)
+        }
+        // Every other app on the phone, on the virtual display (apps with a car UI keep that, lighter
+        // and made for driving). Spotify, Waze, Google Maps… refuse AARE as a host but run here as they are.
+        phoneApps.clear()
+        for (a in all) {
+            val pkg = a.component.packageName
+            if (pkg in hidden) continue
+            val existing = entries.firstOrNull { it.packageName == pkg }
+            if (existing != null) {
+                // A video app is worth its own screen (the video) more than the session player: swap.
+                if (existing.kind == CarAppKind.MEDIA && PhoneApps.kind(pkg, a.category) == PhoneApps.Kind.VIDEO) entries.remove(existing)
+                else continue
+            }
+            val id = phoneAppId(pkg)
+            phoneApps[id] = a
+            entries += CarAppEntry(id, pkg, a.label, a.icon, CarAppKind.PHONE_APP)
         }
         // The order chosen on the phone first, then alphabetical.
         val order = settings.appOrder.withIndex().associate { (i, k) -> k to i }
@@ -554,6 +583,7 @@ class CarRuntime(
         }
 
         override fun goHome() { ui.screen = CarScreen.Dashboard }
+        override fun back() = this@CarRuntime.back()
         override fun openLauncher() { ui.screen = CarScreen.Launcher }
         override fun assistant() { this@CarRuntime.assistant() }
         override fun mediaPlayPause() = media.playPause()
@@ -637,6 +667,11 @@ class CarRuntime(
                             CarAppKind.PHONE -> PhoneScreen(this, mod)
                             CarAppKind.SETTINGS -> CarSettingsScreen(settings, mod)
                             CarAppKind.NOTIFICATIONS -> NotificationsScreen(ui, mod)
+                            CarAppKind.PHONE_APP -> phoneApps[app.id]?.let { a ->
+                                androidx.compose.runtime.key(a.component) {
+                                    PhoneAppScreen(this, a.component, PhoneApps.kind(app.packageName, a.category), ui.drivingRestricted, mod)
+                                }
+                            }
                             else -> connection(app.id)?.let { CarAppScreen(it, this, mod) }
                         }
                     },
@@ -661,6 +696,8 @@ class CarRuntime(
         fun carId(app: CarAppInfo) = "car:${app.service.flattenToShortString()}"
         fun mediaId(pkg: String) = "media:$pkg"
         fun messagingId(pkg: String) = "messages:$pkg"
+        fun phoneAppId(pkg: String) = "phone-app:$pkg"
+        private const val PHONE_APP_ICON_PX = 96
         const val PHONE_SCREEN_ID = "phone-screen"
         const val PHONE_ID = "phone"
         const val SETTINGS_ID = "car-settings"

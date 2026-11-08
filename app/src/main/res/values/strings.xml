@@ -255,6 +255,7 @@
     <!-- dash: car shell / dashboard chrome -->
     <string name="dash_menu_apps">Apps</string>
     <string name="dash_menu_home">Home</string>
+    <string name="dash_menu_back">Back</string>
 
     <!-- nav: navigation feature (dashboard card and templates) -->
     <string name="nav_dashboard_no_app_title">No navigation app</string>
@@ -330,4 +331,35 @@
 
     <!-- search: media search view -->
     <string name="search_parked_only">Search is available when parked</string>
+
+    <!-- GTS home screen: the car card's readings -->
+    <string name="gts_water">Water</string>
+    <string name="gts_boost">Boost</string>
+    <string name="gts_battery">Battery</string>
+    <string name="gts_fuel">Fuel</string>
+    <string name="gts_range">Range</string>
+    <string name="gts_consumption">Economy</string>
+    <string name="apps_locked_social">Unlock the phone to open messaging and social apps on the car.</string>
+    <string name="apps_driving_paused">Paused while driving: only navigation and music show. The sound goes on.</string>
+    <string name="apps_need_shizuku">Phone apps on the car screen need Shizuku running and allowed for AARE (Car audio page).</string>
+    <string name="phone_a11y_in_car_title">Touch service only in the car</string>
+    <string name="phone_a11y_in_car_subtitle">AARE turns its accessibility service on when the car connects and off when it leaves (through Shizuku). Banking apps refuse to open while it is on.</string>
+    <string name="phone_apps_section">Phone apps on the car</string>
+    <string name="phone_apps_toggle_title">Open phone apps on the car</string>
+    <string name="phone_apps_toggle_subtitle">Any app, full screen on the car, without showing on the phone (needs Shizuku). Only the ones ticked below appear in the car\'s app grid.</string>
+    <string name="phone_apps_size">Size of the apps on the car</string>
+    <string name="phone_apps_size_hint">1 fits more on the screen, 8 makes everything bigger. Applies the next time an app is shown.</string>
+    <string name="phone_apps_pick">Apps in the car\'s grid (%1$d chosen)</string>
+    <string name="phone_apps_search">Search apps</string>
+    <string name="phone_apps_kind_social">Messages or social: locked phone blocks it</string>
+    <string name="phone_apps_kind_other">Phone app</string>
+    <string name="obd_section">Car data (OBD2)</string>
+    <string name="obd_toggle_title">Read the OBD2 adapter</string>
+    <string name="obd_toggle_subtitle">Speed, revs, temperatures and fuel from a paired Bluetooth adapter (V-LINK, ELM327) for the GTS car card. Read only.</string>
+    <string name="obd_simulated_title">Pretend adapter</string>
+    <string name="obd_simulated_subtitle">A pretend car that drives a loop, to try the card without the car</string>
+    <string name="obd_hint">The adapter takes one app at a time: AARE holds it only while connected to the car. Applies at the next connection.</string>
+    <string name="obd_searching">Looking for the OBD2 adapter</string>
+    <string name="obd_no_car">Adapter found, the car isn\'t answering (ignition off?)</string>
+    <string name="obd_gave_up">No OBD2 adapter</string>
 </resources>
