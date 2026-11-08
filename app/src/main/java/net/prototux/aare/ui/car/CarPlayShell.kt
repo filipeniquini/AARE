@@ -81,7 +81,7 @@ internal fun CarPlayShell(
             val content: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
                     when (val screen = state.screen) {
-                        CarScreen.Dashboard -> Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(12.dp))
+                        CarScreen.Dashboard, CarScreen.MapFull -> Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(12.dp))
                         CarScreen.Launcher -> Home(state, actions)
                         is CarScreen.App -> state.app(screen.appId)?.let { appContent(it, Modifier.fillMaxSize()) } ?: Home(state, actions)
                     }

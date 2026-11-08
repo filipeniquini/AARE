@@ -33,6 +33,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloseFullscreen
+import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Mic
@@ -145,6 +147,11 @@ private fun ContentArea(
                 Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(gutter))
             }
             CarScreen.Launcher -> Launcher(state, actions, Modifier.fillMaxSize())
+            CarScreen.MapFull -> {
+                val mapCard = LocalMapCard.current
+                if (mapCard != null) mapCard(Modifier.fillMaxSize())
+                else Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(gutter))
+            }
             is CarScreen.App -> {
                 val app = state.app(screen.appId)
                 if (app != null) appContent(app, Modifier.fillMaxSize()) else Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(gutter))
@@ -187,7 +194,8 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
     val tightBar = horizontal && conf.screenHeightDp > conf.screenWidthDp && conf.screenWidthDp < 800
     val tighterBar = tightBar && conf.screenWidthDp < 640
     val apps: @Composable (Int) -> Unit = { recentSlots ->
-        RailApp(nav, Icons.Rounded.Map, on(nav)) { nav?.let(actions::openApp) ?: actions.openLauncher() }
+        // Not on the GTS home screen, whose big card is the map (full screen from its own button).
+        if (!LocalGtsStyle.current) RailApp(nav, Icons.Rounded.Map, on(nav)) { nav?.let(actions::openApp) ?: actions.openLauncher() }
         RailApp(media, Icons.Rounded.MusicNote, on(media)) { media?.let(actions::openApp) ?: actions.openLauncher() }
         recent.take(recentSlots).forEach { app -> RailApp(app, Icons.Rounded.Apps, on(app)) { actions.openApp(app) } }
         phone?.let { RailApp(it, Icons.Rounded.Call, on(it)) { actions.openApp(it) } }
@@ -200,6 +208,13 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
         if (state.screen == CarScreen.Dashboard) RailButton(Icons.Rounded.Apps, stringResource(R.string.dash_menu_apps), selected = false) { actions.openLauncher() }
         else RailButton(Icons.Rounded.Home, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
         if (needsBack) RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
+        // The GTS map card full screen and back, next to the app grid: only on the home screen
+        // and while the map is full screen.
+        if (LocalMapCard.current != null) when (state.screen) {
+            CarScreen.Dashboard -> RailButton(Icons.Rounded.OpenInFull, stringResource(R.string.map_expand), selected = false) { actions.openMapFull() }
+            CarScreen.MapFull -> RailButton(Icons.Rounded.CloseFullscreen, stringResource(R.string.map_collapse), selected = false) { actions.goHome() }
+            else -> Unit
+        }
     }
     val mic: @Composable () -> Unit = { MicButton(state.listening) { actions.assistant() } }
     val bell = { state.apps.firstOrNull { it.kind == CarAppKind.NOTIFICATIONS }?.let(actions::openApp) }

@@ -42,6 +42,11 @@ internal fun PhoneAppScreen(
     modifier: Modifier,
     /** [PhoneApps.card]: the home screen's map card, which leaves the car's back key alone. */
     host: PhoneAppHost = PhoneApps.full,
+    /**
+     * Bring [component] to the front each time this is shown (a display shared by many apps), or
+     * only when the display is new (the map card: what runs there, Gemini included, stays as it is).
+     */
+    reopen: Boolean = true,
 ) {
     val context = LocalContext.current
     val locked = rememberKeyguardLocked()
@@ -52,12 +57,19 @@ internal fun PhoneAppScreen(
     val show = !blockedLocked && !blockedDriving
     // Their own size, chosen on the phone: the car UI's density made some apps tablet-sized and tiny.
     val setting = runtime.settings.phoneAppsDpi
-    fun dpiFor(w: Int, h: Int) = if (setting == net.prototux.aare.Settings.PHONE_APPS_DPI_TABLET) PhoneApps.tabletDpi(w, h) else setting
+    fun dpiFor(w: Int, h: Int): Int {
+        if (setting != net.prototux.aare.Settings.PHONE_APPS_DPI_TABLET) return setting
+        // Keep the density the display has while it is still a tablet at the new size: a new
+        // density means a new display, and its apps would start over (the map card going full screen).
+        val now = host.currentDpi
+        return if (now > 0 && minOf(w, h) * 160 / now >= 600) now else PhoneApps.tabletDpi(w, h)
+    }
 
     DisposableEffect(Unit) {
         val full = host === PhoneApps.full
         if (full) runtime.screenBack = { host.back(); true }
-        onDispose { if (full) runtime.screenBack = null; host.detach() }
+        // The view's own surface callback detaches it (only if it's still the one shown).
+        onDispose { if (full) runtime.screenBack = null }
     }
 
     Box(modifier.background(Color.Black)) {
@@ -71,13 +83,13 @@ internal fun PhoneAppScreen(
                             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                                 surface = Surface(st)
                                 // Opened each time it's shown: an app already running comes to the front as it was.
-                                host.attach(context, surface!!, w, h, dpiFor(w, h)) { host.open(component) }
+                                host.attach(context, surface!!, w, h, dpiFor(w, h)) { fresh -> if (reopen || fresh) host.open(component) }
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
                                 surface?.let { host.attach(context, it, w, h, dpiFor(w, h)) }
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                                host.detach()
+                                host.detach(surface)
                                 surface?.release(); surface = null
                                 return true
                             }

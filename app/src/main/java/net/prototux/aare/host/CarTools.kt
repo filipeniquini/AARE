@@ -62,6 +62,7 @@ object CarTools {
             .put("on_screen", when (val s = ui.screen) {
                 CarScreen.Dashboard -> "home"
                 CarScreen.Launcher -> "app list"
+                CarScreen.MapFull -> "map, full screen"
                 is CarScreen.App -> ui.app(s.appId)?.label ?: "an app"
             })
         ui.phoneGuidance?.let { g ->

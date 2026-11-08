@@ -78,7 +78,9 @@ internal fun GtsDashboard(
     val gutter = LocalCarDimens.current.gutter
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(gutter)) {
         val mapCard = LocalMapCard.current
-        if (mapCard != null) Card(Modifier.weight(1f).fillMaxHeight()) { mapCard(Modifier.fillMaxSize()) }
+        if (mapCard != null) Card(Modifier.weight(1f).fillMaxHeight()) {
+            mapCard(Modifier.fillMaxSize())
+        }
         else NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
         BoxWithConstraints(Modifier.weight(GTS_SIDE_WEIGHT).fillMaxHeight()) {
         // 16:9 when there's room; on a shorter screen (the car's 149 dpi makes AARE's own bar take

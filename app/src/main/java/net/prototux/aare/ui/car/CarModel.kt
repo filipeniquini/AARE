@@ -40,6 +40,8 @@ sealed interface CarScreen {
     data object Dashboard : CarScreen
     data object Launcher : CarScreen
     data class App(val appId: String) : CarScreen
+    /** The GTS home screen's map card (a phone app on its own display) over the whole content area. */
+    data object MapFull : CarScreen
 }
 
 /** A transient card, e.g. an incoming message or a toast from a car app. */
@@ -143,4 +145,6 @@ interface CarActions {
     fun navigateTo(place: String)
     /** Back, as the car's own back key: inside the app on screen first. */
     fun back() {}
+    /** The map card full screen (Android Auto's navigation app taking the screen from its dashboard card). */
+    fun openMapFull() {}
 }

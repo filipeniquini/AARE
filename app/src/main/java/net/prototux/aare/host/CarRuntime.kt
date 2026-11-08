@@ -676,6 +676,7 @@ class CarRuntime(
         override fun goHome() { ui.screen = CarScreen.Dashboard }
         override fun back() = this@CarRuntime.back()
         override fun openLauncher() { ui.screen = CarScreen.Launcher }
+        override fun openMapFull() { ui.screen = CarScreen.MapFull }
         override fun assistant() { this@CarRuntime.assistant() }
         override fun mediaPlayPause() = media.playPause()
         override fun mediaNext() = media.next()
@@ -731,7 +732,7 @@ class CarRuntime(
         val gemini = context.packageManager.getLaunchIntentForPackage(PhoneApps.GEMINI)?.component ?: return false
         if (!settings.phoneApps || !PhoneApps.available()) return false
         val map = mapCardComponent()
-        if (map != null && ui.screen == CarScreen.Dashboard) {
+        if (map != null && (ui.screen == CarScreen.Dashboard || ui.screen == CarScreen.MapFull)) {
             scope.launch {
                 val top = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PhoneApps.card.topPackage() }
                 val back = top in PhoneApps.ASSISTANT_PACKAGES
@@ -763,7 +764,7 @@ class CarRuntime(
                 val conn = connections[s.appId]
                 if (conn != null) conn.back() else ui.screen = CarScreen.Dashboard
             }
-            CarScreen.Launcher -> ui.screen = CarScreen.Dashboard
+            CarScreen.Launcher, CarScreen.MapFull -> ui.screen = CarScreen.Dashboard
             CarScreen.Dashboard -> Unit
         }
     }
@@ -778,7 +779,7 @@ class CarRuntime(
             // The GTS home screen's big card: a phone app live (Google Maps by default), when it can.
             val cardApp = remember(ui.gtsStyle) { mapCardComponent() }
             val mapCard: (@Composable (Modifier) -> Unit)? = cardApp?.let { component ->
-                { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card) }
+                { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card, reopen = false) }
             }
             CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else LocalCarDimens.current, net.prototux.aare.ui.car.LocalMapCard provides mapCard) {
                 CarShell(

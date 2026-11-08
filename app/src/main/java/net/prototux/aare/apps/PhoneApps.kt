@@ -126,8 +126,18 @@ class PhoneAppHost(private val name: String) {
     val ready: StateFlow<Boolean?> = _ready
 
     
-    /** Shows the display in [surface] ([width]×[height] pixels), creating it the first time. */
-    fun attach(context: Context, surface: Surface, width: Int, height: Int, dpi: Int, then: () -> Unit = {}) = worker.execute {
+    /** The surface the display draws into now (the newest view showing it). */
+    @Volatile private var shownIn: Surface? = null
+
+    /** The display's density, 0 before it exists. */
+    val currentDpi: Int get() = if (displayId >= 0) size.third else 0
+
+    /**
+     * Shows the display in [surface] ([width]×[height] pixels), creating it the first time; [then]
+     * learns whether it was just made (true) or already there, with its apps running.
+     */
+    fun attach(context: Context, surface: Surface, width: Int, height: Int, dpi: Int, then: (fresh: Boolean) -> Unit = {}) = worker.execute {
+        shownIn = surface
         val s = bind(context) ?: run { _ready.value = false; return@execute }
         try {
             // A new size (density) for the apps: start the display afresh. Resizing it in place only
@@ -137,6 +147,7 @@ class PhoneAppHost(private val name: String) {
                 s.release()
                 displayId = -1
             }
+            val fresh = displayId < 0
             if (displayId < 0) {
                 displayId = s.create(surface, width, height, dpi)
                 size = Triple(width, height, dpi)
@@ -144,19 +155,32 @@ class PhoneAppHost(private val name: String) {
                 DiagLog.add(if (displayId >= 0) "phone apps ($name): display $displayId ${width}x$height ${dpi}dpi" else "phone apps ($name): can't create the display")
             } else {
                 s.setSurface(surface)
-                // Same density, another size (the car's insets changed): resizing is enough.
-                if (size != Triple(width, height, dpi)) { s.resize(width, height, dpi); size = Triple(width, height, dpi) }
+                // Same density, another size (the card going full screen, the car's insets): resizing
+                // is enough, and the apps keep running (they get a configuration change).
+                if (size != Triple(width, height, dpi)) {
+                    s.resize(width, height, dpi)
+                    DiagLog.add("phone apps ($name): resized to ${width}x$height")
+                    size = Triple(width, height, dpi)
+                }
                 _ready.value = true
             }
-            if (displayId >= 0) then()
+            if (displayId >= 0) then(fresh)
         } catch (e: Exception) {
             Log.w(TAG, "attach", e)
             _ready.value = false
         }
     }
 
-    /** The car shows something else: the apps keep running, drawing nowhere. */
-    fun detach() = worker.execute { runCatching { service?.setSurface(null) } }
+    /**
+     * The car shows something else: the apps keep running, drawing nowhere. With [surface], only if
+     * that is still the one shown: while the car UI cross-fades from one view of the display to
+     * another (the map card going full screen), the old view goes after the new one took over.
+     */
+    fun detach(surface: Surface? = null) = worker.execute {
+        if (surface != null && surface !== shownIn) return@execute
+        shownIn = null
+        runCatching { service?.setSurface(null) }
+    }
 
     /** Opens [app] on the display (after [attach]). */
     fun open(app: ComponentName) = worker.execute {

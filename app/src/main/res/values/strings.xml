@@ -354,6 +354,8 @@
     <string name="phone_apps_size">Size of the apps on the car</string>
     <string name="phone_apps_size_hint">1 fits more on the screen, 8 makes everything bigger. Tablet: the biggest size at which apps like YouTube still use their tablet layout. Applies the next time an app is shown.</string>
     <string name="phone_apps_size_tablet">Tablet</string>
+    <string name="map_expand">Full screen</string>
+    <string name="map_collapse">Back to the home screen</string>
     <string name="phone_apps_pick">Apps in the car\'s grid (%1$d chosen)</string>
     <string name="phone_apps_search">Search apps</string>
     <string name="phone_apps_kind_social">Messages or social: locked phone blocks it</string>
