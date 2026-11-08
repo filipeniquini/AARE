@@ -72,8 +72,8 @@ class CarAudioOut(
             onFailed()
             return
         }
-        // ~20 ms chunks: small enough for low latency, big enough to keep the message rate sane.
-        val chunk = rate / 50 * channels * 2
+        // Android Auto's chunk size (see [chunkBytes]): the head unit may expect exactly that.
+        val chunk = chunkBytes(rate, channels)
         val buf = ByteArray(10 + chunk)
         var lastSound = 0L
         playing = false
@@ -195,6 +195,13 @@ class CarAudioOut(
         private const val UNDERFLOW_HOLD_MS = 30_000L
         /** A head unit's end-of-stream underflow lands within this long of us stopping: not a real gap. */
         private const val IGNORE_UNDERFLOW_AFTER_STOP_MS = 1_000L
+
+        /**
+         * Bytes per audio message, as Android Auto sends them: 2048 samples at 44.1 or 48 kHz, 1024
+         * otherwise (gearhead's CarAudioConfiguration sizing). AARE sent 20 ms chunks (3840 bytes at
+         * 48 kHz stereo), and the VW Play hung right after the first ones (2026-11-08).
+         */
+        fun chunkBytes(rate: Int, channels: Int): Int = (if (rate == 44_100 || rate == 48_000) 2048 else 1024) * channels * 2
 
         /** Digital silence or noise floor (captures deliver zeros when nothing plays). */
         fun isSilent(b: ByteArray, off: Int, len: Int): Boolean {
