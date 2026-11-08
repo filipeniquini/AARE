@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
@@ -291,7 +292,7 @@ class CarRuntime(
             "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
-            "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown" -> main.post { refreshApps() }
+            "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }
         }
     }
 
@@ -407,6 +408,8 @@ class CarRuntime(
         for (a in all) {
             val pkg = a.component.packageName
             if (pkg in hidden) continue
+            // The big card's app lives on its own display: opening it full screen too would fight over it.
+            if (ui.gtsStyle && pkg == settings.mapCardApp) continue
             val existing = entries.firstOrNull { it.packageName == pkg }
             if (existing != null) {
                 // A video app is worth its own screen (the video) more than the session player: swap.
@@ -628,6 +631,13 @@ class CarRuntime(
         }
     }
 
+    /** The phone app for the GTS big card, if it's set, installed and Shizuku can show it; else null. */
+    private fun mapCardComponent(): android.content.ComponentName? {
+        if (!ui.gtsStyle || !settings.phoneApps || !PhoneApps.available()) return null
+        val pkg = settings.mapCardApp.ifBlank { return null }
+        return context.packageManager.getLaunchIntentForPackage(pkg)?.component
+    }
+
     /** Set by a screen with its own back stack (a conversation in a messaging app): true if it handled back. */
     var screenBack: (() -> Boolean)? = null
 
@@ -652,7 +662,12 @@ class CarRuntime(
     fun Root(modifier: Modifier = Modifier) {
         val mediaApps by media.apps.collectAsState()
         CarTheme(night = ui.night, gts = ui.gtsStyle) {
-            CompositionLocalProvider(LocalCarDimens provides LocalCarDimens.current) {
+            // The GTS home screen's big card: a phone app live (Google Maps by default), when it can.
+            val cardApp = remember(ui.gtsStyle) { mapCardComponent() }
+            val mapCard: (@Composable (Modifier) -> Unit)? = cardApp?.let { component ->
+                { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card) }
+            }
+            CompositionLocalProvider(LocalCarDimens provides LocalCarDimens.current, net.prototux.aare.ui.car.LocalMapCard provides mapCard) {
                 CarShell(
                     state = ui,
                     actions = actions,

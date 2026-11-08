@@ -333,6 +333,7 @@
     <string name="search_parked_only">Search is available when parked</string>
 
     <!-- GTS home screen: the car card's readings -->
+    <string name="gts_media_source">Phone</string>
     <string name="gts_water">Water</string>
     <string name="gts_boost">Boost</string>
     <string name="gts_battery">Battery</string>
@@ -344,6 +345,9 @@
     <string name="apps_need_shizuku">Phone apps on the car screen need Shizuku running and allowed for AARE (Car audio page).</string>
     <string name="phone_a11y_in_car_title">Touch service only in the car</string>
     <string name="phone_a11y_in_car_subtitle">AARE turns its accessibility service on when the car connects and off when it leaves (through Shizuku). Banking apps refuse to open while it is on.</string>
+    <string name="phone_apps_map_card">Big card on the GTS home screen</string>
+    <string name="phone_apps_map_card_car">Car app</string>
+    <string name="phone_apps_map_card_hint">A navigation app from the phone, live in the big card (it stays off the app grid). Car app: the car navigation app, such as CoMaps. Applies at the next connection.</string>
     <string name="phone_apps_section">Phone apps on the car</string>
     <string name="phone_apps_toggle_title">Open phone apps on the car</string>
     <string name="phone_apps_toggle_subtitle">Any app, full screen on the car, without showing on the phone (needs Shizuku). Only the ones ticked below appear in the car\'s app grid.</string>

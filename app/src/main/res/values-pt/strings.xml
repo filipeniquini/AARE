@@ -332,6 +332,7 @@
     <string name="search_parked_only">A pesquisa está disponível quando estacionado</string>
 
     <!-- GTS home screen: the car card's readings -->
+    <string name="gts_media_source">Celular</string>
     <string name="gts_water">Água</string>
     <string name="gts_boost">Turbo</string>
     <string name="gts_battery">Bateria</string>
@@ -343,6 +344,9 @@
     <string name="apps_need_shizuku">As aplicações do telemóvel no ecrã do carro precisam do Shizuku a funcionar e autorizado para a AARE (página Áudio do carro).</string>
     <string name="phone_a11y_in_car_title">Serviço de toque só no carro</string>
     <string name="phone_a11y_in_car_subtitle">A AARE liga o seu serviço de acessibilidade quando o carro se liga e desliga-o quando sai (pelo Shizuku). Aplicações de banco recusam-se a abrir enquanto está ligado.</string>
+    <string name="phone_apps_map_card">Cartão grande do ecrã inicial GTS</string>
+    <string name="phone_apps_map_card_car">App do carro</string>
+    <string name="phone_apps_map_card_hint">Uma aplicação de navegação do telemóvel, ao vivo no cartão grande (sai da grade de aplicações). App do carro: a aplicação de navegação do carro, como o CoMaps. Vale na próxima ligação.</string>
     <string name="phone_apps_section">Aplicações do telemóvel no carro</string>
     <string name="phone_apps_toggle_title">Abrir aplicações do telemóvel no carro</string>
     <string name="phone_apps_toggle_subtitle">Qualquer aplicação, em ecrã inteiro no carro, sem aparecer no telemóvel (precisa do Shizuku). Só as marcadas abaixo aparecem na grade do carro.</string>

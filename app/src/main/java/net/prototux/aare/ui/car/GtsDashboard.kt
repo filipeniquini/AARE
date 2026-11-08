@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import net.prototux.aare.R
+import net.prototux.aare.car.Weather
 import net.prototux.aare.obd.ObdReader
 import net.prototux.aare.obd.ObdReadings
 import androidx.compose.runtime.collectAsState
@@ -75,7 +76,9 @@ internal fun GtsDashboard(
 ) {
     val gutter = LocalCarDimens.current.gutter
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(gutter)) {
-        NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
+        val mapCard = LocalMapCard.current
+        if (mapCard != null) Card(Modifier.weight(1f).fillMaxHeight()) { mapCard(Modifier.fillMaxSize()) }
+        else NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
         Column(Modifier.weight(GTS_SIDE_WEIGHT).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gutter)) {
             // Grey, like the car's own VW Play screens, with its insides in matching greys.
             Card(Modifier.weight(1f).fillMaxWidth(), background = Brush.verticalGradient(listOf(CAR_CARD_TOP, CAR_CARD_BOTTOM))) {
@@ -92,6 +95,12 @@ internal fun GtsDashboard(
         }
     }
 }
+
+/**
+ * A phone app shown live in the big card (Google Maps by default, on [net.prototux.aare.apps.PhoneApps.card]),
+ * provided by the car runtime; null keeps the car navigation app's card.
+ */
+val LocalMapCard = androidx.compose.runtime.compositionLocalOf<(@Composable (Modifier) -> Unit)?> { null }
 
 /** The right column's width against the map card's 1: about 30 % of the screen, as in the user's sketch. */
 private const val GTS_SIDE_WEIGHT = 0.42f
@@ -167,6 +176,12 @@ private fun ObdStatusLabel(status: ObdReader.Status, s: Scale, modifier: Modifie
     }
 }
 
+/** 2:56, or 1:02:56 past an hour. */
+private fun clock(ms: Long): String {
+    val t = ms / 1000
+    return if (t >= 3600) "%d:%02d:%02d".format(t / 3600, t / 60 % 60, t % 60) else "%d:%02d".format(t / 60, t % 60)
+}
+
 /** The rev counter as a bar, red from [REV_RED] up; [rpm] null draws the empty scale. */
 @Composable
 private fun RevBar(rpm: Int?, modifier: Modifier) {
@@ -212,10 +227,14 @@ private fun WeatherRow(state: CarUiState, s: Scale) {
         Text(if (w != null) "${w.temperature}°" else "--°", fontSize = s.sp(30f), fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.weight(1f))
-        repeat(3) {
+        val next = w?.forecast.orEmpty()
+        repeat(3) { i ->
+            val f = next.getOrNull(i)
             Column(Modifier.padding(start = s.dp(14f)), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("--h", fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("--°", fontSize = s.sp(18f), color = MaterialTheme.colorScheme.onSurface)
+                Text(f?.let { "${it.hour}h" } ?: "--h", fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (f != null) Icon(weatherIcon(Weather(f.temperature, w!!.unit, f.code, f.day)), null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(16f)))
+                Text(f?.let { "${it.temperature}°" } ?: "--°", fontSize = s.sp(18f), color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -268,7 +287,7 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
             val s = Scale(maxWidth.value / 400f)
             val button = (maxHeight * 0.3f).coerceIn(36.dp, LocalCarDimens.current.touchTarget)
             Column(Modifier.fillMaxSize().padding(horizontal = s.dp(20f), vertical = s.dp(12f))) {
-                Text((media?.label ?: stringResource(R.string.media_fallback_label)).uppercase(), fontSize = s.sp(12f),
+                Text((stringResource(R.string.gts_media_source) + " · " + (media?.label ?: stringResource(R.string.media_fallback_label))).uppercase(), fontSize = s.sp(12f),
                     letterSpacing = s.sp(0.8f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 Text(np?.title ?: stringResource(R.string.media_nothing_playing), fontSize = s.sp(22f), fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -278,14 +297,23 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
                 }
                 Spacer(Modifier.weight(1f))
                 if (np != null && np.durationMs > 0) {
-                    val p = (np.positionMs.toFloat() / np.durationMs).coerceIn(0f, 1f)
+                    // Where the song is now: the position the app last reported, moved on by the clock while it plays.
+                    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                    LaunchedEffect(np.playing, np.updatedAtMs) {
+                        while (np.playing) { now = System.currentTimeMillis(); delay(500) }
+                    }
+                    val position = (np.positionMs + if (np.playing) (now - np.updatedAtMs).coerceAtLeast(0) else 0).coerceIn(0, np.durationMs)
+                    val p = position.toFloat() / np.durationMs
                     val track = MaterialTheme.colorScheme.surfaceContainerHighest
                     val fill = MaterialTheme.colorScheme.primary
-                    Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                    Canvas(Modifier.fillMaxWidth().height(s.dp(4f))) {
                         drawRoundRect(track, cornerRadius = CornerRadius(size.height / 2))
                         drawRoundRect(fill, size = Size(size.width * p, size.height), cornerRadius = CornerRadius(size.height / 2))
                     }
-                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth().padding(top = s.dp(2f)), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(clock(position), fontSize = s.sp(11f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(clock(np.durationMs), fontSize = s.sp(11f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     MediaButton(Icons.Rounded.SkipPrevious, stringResource(R.string.media_action_previous), false, button) { actions.mediaPrevious() }

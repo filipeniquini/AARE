@@ -34,10 +34,18 @@ import net.prototux.aare.mirror.rememberKeyguardLocked
  * app pauses its picture (its sound goes on), like the phone screen mirror.
  */
 @Composable
-internal fun PhoneAppScreen(runtime: CarRuntime, component: ComponentName, kind: PhoneApps.Kind, driving: Boolean, modifier: Modifier) {
+internal fun PhoneAppScreen(
+    runtime: CarRuntime,
+    component: ComponentName,
+    kind: PhoneApps.Kind,
+    driving: Boolean,
+    modifier: Modifier,
+    /** [PhoneApps.card]: the home screen's map card, which leaves the car's back key alone. */
+    host: PhoneAppHost = PhoneApps.full,
+) {
     val context = LocalContext.current
     val locked = rememberKeyguardLocked()
-    val ready by PhoneApps.ready.collectAsState()
+    val ready by host.ready.collectAsState()
     val blockedLocked = locked && kind == PhoneApps.Kind.SOCIAL
     val blockedDriving = driving && kind != PhoneApps.Kind.NAVIGATION && kind != PhoneApps.Kind.MUSIC
     val show = !blockedLocked && !blockedDriving
@@ -45,8 +53,9 @@ internal fun PhoneAppScreen(runtime: CarRuntime, component: ComponentName, kind:
     val dpi = runtime.settings.phoneAppsDpi
 
     DisposableEffect(Unit) {
-        runtime.screenBack = { PhoneApps.back(); true }
-        onDispose { runtime.screenBack = null; PhoneApps.detach() }
+        val full = host === PhoneApps.full
+        if (full) runtime.screenBack = { host.back(); true }
+        onDispose { if (full) runtime.screenBack = null; host.detach() }
     }
 
     Box(modifier.background(Color.Black)) {
@@ -60,20 +69,20 @@ internal fun PhoneAppScreen(runtime: CarRuntime, component: ComponentName, kind:
                             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                                 surface = Surface(st)
                                 // Opened each time it's shown: an app already running comes to the front as it was.
-                                PhoneApps.attach(context, surface!!, w, h, dpi) { PhoneApps.open(component) }
+                                host.attach(context, surface!!, w, h, dpi) { host.open(component) }
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
-                                surface?.let { PhoneApps.attach(context, it, w, h, dpi) }
+                                surface?.let { host.attach(context, it, w, h, dpi) }
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
-                                PhoneApps.detach()
+                                host.detach()
                                 surface?.release(); surface = null
                                 return true
                             }
                             override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
                         }
                         // The display is exactly this view's size: its pixels are the app's.
-                        setOnTouchListener { _, e -> PhoneApps.touch(e); true }
+                        setOnTouchListener { _, e -> host.touch(e); true }
                     }
                     view
                 },

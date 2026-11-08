@@ -138,6 +138,14 @@ class Settings(context: Context) {
         get() = prefs.getInt("phone_apps_dpi", 240)
         set(v) = prefs.edit { putInt("phone_apps_dpi", v) }
 
+    /**
+     * The phone app shown live in the GTS home screen's big card (a package), or "" for the car
+     * navigation app (CoMaps…). Google Maps by default.
+     */
+    var mapCardApp: String
+        get() = prefs.getString("map_card_app", MAP_CARD_DEFAULT) ?: MAP_CARD_DEFAULT
+        set(v) = prefs.edit { putString("map_card_app", v) }
+
     /** Read the OBD2 adapter (the V-LINK) while connected, for the GTS car card. */
     var obdEnabled: Boolean
         get() = prefs.getBoolean("obd_enabled", true)
@@ -250,6 +258,7 @@ class Settings(context: Context) {
         /** The sizes offered for the car screen's interface, largest first. */
         val UI_SCALES = listOf(100, 90, 80, 70)
         /** Phone app sizes on the car (density in dpi), smallest first. */
+        const val MAP_CARD_DEFAULT = "com.google.android.apps.maps"
         val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
         /** The resolutions offered for the mirrored phone screen, sharpest first. */
         val MIRROR_SCALES = listOf(100, 75, 50)

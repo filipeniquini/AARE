@@ -842,6 +842,16 @@ private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
             dpi = it.toInt(); settings.phoneAppsDpi = dpi
         }
         Text(stringResource(R.string.phone_apps_size_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // The GTS home screen's big card: a navigation app live in it, or the car navigation app.
+        var cardApp by remember { mutableStateOf(settings.mapCardApp) }
+        val navChoices = remember {
+            listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze")
+                .filter { (pkg, _) -> runCatching { ctx.packageManager.getPackageInfo(pkg, 0) }.isSuccess }
+        }
+        Choices(stringResource(R.string.phone_apps_map_card), listOf("" to stringResource(R.string.phone_apps_map_card_car)) + navChoices, cardApp) {
+            cardApp = it; settings.mapCardApp = it
+        }
+        Text(stringResource(R.string.phone_apps_map_card_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         AppGroup(stringResource(R.string.phone_apps_pick, shown.size))
         androidx.compose.material3.OutlinedTextField(filter, { filter = it }, Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(R.string.phone_apps_search)) }, singleLine = true)
