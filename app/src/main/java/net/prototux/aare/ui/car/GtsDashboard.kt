@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,6 +46,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,7 +79,11 @@ internal fun GtsDashboard(
         val mapCard = LocalMapCard.current
         if (mapCard != null) Card(Modifier.weight(1f).fillMaxHeight()) { mapCard(Modifier.fillMaxSize()) }
         else NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
-        Column(Modifier.weight(GTS_SIDE_WEIGHT).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gutter)) {
+        BoxWithConstraints(Modifier.weight(GTS_SIDE_WEIGHT).fillMaxHeight()) {
+        // 16:9 when there's room; on a shorter screen (the car's 149 dpi makes AARE's own bar take
+        // more of it) the player gives up height so the car card keeps its bottom row.
+        val mediaHeight = minOf(maxWidth * 9f / 16f, (maxHeight - gutter) * MEDIA_SHARE_MAX)
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter)) {
             // Grey, like the car's own VW Play screens, with its insides in matching greys.
             Card(Modifier.weight(1f).fillMaxWidth(), background = Brush.verticalGradient(listOf(CAR_CARD_TOP, CAR_CARD_BOTTOM))) {
                 val c = MaterialTheme.colorScheme
@@ -90,11 +94,14 @@ internal fun GtsDashboard(
                     onSurfaceVariant = Color(0xFFC9CCD1),
                 )) { GtsCarCard(state, Modifier.fillMaxSize()) }
             }
-            // Fixed 16:9: the car card above gives way, not the player.
-            GtsMediaCard(state, actions, Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+                        GtsMediaCard(state, actions, Modifier.fillMaxWidth().height(mediaHeight))
+        }
         }
     }
 }
+
+/** The most of the right column the player may take. */
+private const val MEDIA_SHARE_MAX = 0.40f
 
 /**
  * A phone app shown live in the big card (Google Maps by default, on [net.prototux.aare.apps.PhoneApps.card]),
@@ -120,17 +127,21 @@ private const val REV_RED = 6.5f // the Polo GTS 1.4 TSI's redline
  * the column is a fixed share of the screen, so a fixed sp size would be tiny or overflow.
  * [u] is 1 on a card 400 units wide (and no wider than its height allows).
  */
-private class Scale(val u: Float) {
-    fun sp(v: Float) = (v * u).sp
+private class Scale(val u: Float, private val fontScale: Float) {
+    /** Divided by the phone's font size setting: the card is sized in its own units, so a bigger phone font must not overflow it. */
+    fun sp(v: Float) = (v * u / fontScale).sp
     fun dp(v: Float) = (v * u).dp
 }
+
+@Composable
+private fun scale(u: Float) = Scale(u, LocalDensity.current.fontScale)
 
 @Composable
 private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
     val obd by ObdReader.readings.collectAsState()
     val obdStatus by ObdReader.status.collectAsState()
     BoxWithConstraints(modifier) {
-        val s = Scale(minOf(maxWidth.value / 400f, maxHeight.value / 380f))
+        val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
         Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f)), verticalArrangement = Arrangement.SpaceBetween) {
             Column {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -284,7 +295,7 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainer))))
         }
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            val s = Scale(maxWidth.value / 400f)
+            val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 225f))
             val button = (maxHeight * 0.3f).coerceIn(36.dp, LocalCarDimens.current.touchTarget)
             Column(Modifier.fillMaxSize().padding(horizontal = s.dp(20f), vertical = s.dp(12f))) {
                 Text((stringResource(R.string.gts_media_source) + " · " + (media?.label ?: stringResource(R.string.media_fallback_label))).uppercase(), fontSize = s.sp(12f),
@@ -297,10 +308,11 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
                 }
                 Spacer(Modifier.weight(1f))
                 if (np != null && np.durationMs > 0) {
-                    // Where the song is now: the position the app last reported, moved on by the clock while it plays.
-                    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+                    // Where the song is now: the position the app last reported, moved on by the clock while it
+                    // plays. Sampled on elapsedRealtime (PlaybackState's clock): the wall clock pinned it at the end.
+                    var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
                     LaunchedEffect(np.playing, np.updatedAtMs) {
-                        while (np.playing) { now = System.currentTimeMillis(); delay(500) }
+                        while (true) { now = android.os.SystemClock.elapsedRealtime(); if (!np.playing) break; delay(500) }
                     }
                     val position = (np.positionMs + if (np.playing) (now - np.updatedAtMs).coerceAtLeast(0) else 0).coerceIn(0, np.durationMs)
                     val p = position.toFloat() / np.durationMs

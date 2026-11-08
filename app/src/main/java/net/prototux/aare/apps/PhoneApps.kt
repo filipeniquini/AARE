@@ -150,9 +150,28 @@ class PhoneAppHost(private val name: String) {
         if (!ok) DiagLog.add("phone apps ($name): couldn't open ${app.packageName}")
     }
 
+    /** When the current gesture started, on this phone's uptime clock. */
+    private var gestureDown = 0L
+
+    /**
+     * A fresh event in the view's own pixels (the display's) on the phone's clock. A copy of the
+     * view's event kept its offset on the car screen: fine full screen at the top left corner, but
+     * the map card sits further in, so its touches landed outside the display.
+     */
     fun touch(event: MotionEvent) {
-        val copy = MotionEvent.obtain(event)
-        worker.execute { runCatching { service?.touch(copy) }; copy.recycle() }
+        val now = android.os.SystemClock.uptimeMillis()
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) gestureDown = now
+        val n = event.pointerCount
+        val props = Array(n) { i -> MotionEvent.PointerProperties().also { event.getPointerProperties(i, it); it.toolType = MotionEvent.TOOL_TYPE_FINGER } }
+        val coords = Array(n) { i -> MotionEvent.PointerCoords().also { c ->
+            event.getPointerCoords(i, c)
+            c.x = event.getX(i); c.y = event.getY(i)
+            if (c.pressure <= 0f) c.pressure = 1f
+            if (c.size <= 0f) c.size = 1f
+        } }
+        val fresh = MotionEvent.obtain(gestureDown, now, event.action, n, props, coords, 0, 0, 1f, 1f, 0, 0,
+            android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
+        worker.execute { runCatching { service?.touch(fresh) }; fresh.recycle() }
     }
 
     fun back() = worker.execute { runCatching { service?.key(android.view.KeyEvent.KEYCODE_BACK) } }

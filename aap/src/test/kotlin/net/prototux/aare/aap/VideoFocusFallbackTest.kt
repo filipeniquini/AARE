@@ -70,6 +70,7 @@ class VideoFocusFallbackTest {
             return 0
         }
         override fun onVideoStart(index: Int, config: VideoConfiguration) {
+            video!!.sendCodecConfig(byteArrayOf(0, 0, 0, 1, 0x67), 0, 5)
             Thread {
                 var n = 0
                 while (streaming.get()) {
@@ -139,6 +140,28 @@ class VideoFocusFallbackTest {
 
         Thread.sleep(1_000)
         assertTrue("frames should flow again after the camera", hu.videoFrames.get() > before + 10)
+    }
+
+    /** As Android Auto: the stream stops while the car shows its own screen and comes back as a new session. */
+    @Test
+    fun focusLossStopsTheStreamAndFocusGainStartsANewSession() {
+        connect(answerVideoFocus = true)
+        assertTrue(hu.firstVideoFrame.await(5, TimeUnit.SECONDS))
+        val configsBefore = hu.codecConfigs.get()
+
+        hu.requestFocusNative()
+        Thread.sleep(300)
+        assertEquals("the stream stops with the car's own screen", 1, hu.videoStops.get())
+        val stopped = hu.videoFrames.get()
+        Thread.sleep(200)
+        assertEquals("nothing is sent while stopped", stopped, hu.videoFrames.get())
+
+        hu.requestFocusProjected()
+        Thread.sleep(1_000)
+        assertEquals("a new session", 2, hu.videoStart!!.sessionId)
+        assertEquals(1, video!!.restarts)
+        assertTrue("the decoder setup is sent again", hu.codecConfigs.get() > configsBefore)
+        assertTrue("frames flow in the new session", hu.videoFrames.get() > stopped + 10)
     }
 
     /** Same, but the car never says it took the screen: the stall check recovers. */

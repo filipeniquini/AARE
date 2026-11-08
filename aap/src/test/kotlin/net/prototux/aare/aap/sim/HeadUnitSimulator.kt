@@ -109,6 +109,8 @@ class HeadUnitSimulator(
     val byeBye = CountDownLatch(1)
     val closed = CountDownLatch(1)
     @Volatile var videoStart: Start? = null
+    /** STOP messages on the video channel. */
+    val videoStops = AtomicInteger()
     @Volatile var error: Throwable? = null
 
     fun start() {
@@ -199,6 +201,7 @@ class HeadUnitSimulator(
             MediaMsg.SETUP -> send(m.channel, MediaMsg.CONFIG, Config.newBuilder().setStatus(Config.Status.STATUS_READY)
                 .setMaxUnacked(maxUnacked).addConfigurationIndices(0).build())
             MediaMsg.START -> if (m.channel == video) videoStart = Start.parseFrom(m.bodyBytes())
+            MediaMsg.STOP -> if (m.channel == video) videoStops.incrementAndGet()
             MediaMsg.VIDEO_FOCUS_REQUEST -> {
                 focusRequests.incrementAndGet()
                 val r = VideoFocusRequestNotification.parseFrom(m.bodyBytes())

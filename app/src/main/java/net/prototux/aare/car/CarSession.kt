@@ -153,6 +153,7 @@ class CarSession(
         }
         runtime.start()
         // The car's own readings for the GTS car card, from the OBD2 adapter (V-LINK) while connected.
+        holdMusicUntilCarAudio()
         if (settings.obdEnabled) net.prototux.aare.obd.ObdReader.start(context, settings.obdSimulated)
         if (settings.accessibilityInCarOnly && settings.phoneScreen) net.prototux.aare.mirror.AccessibilitySwitch.carConnected(context)
         settings.registerListener(uiScaleListener)
@@ -606,7 +607,58 @@ class CarSession(
                 failedCapture += method
                 startAudio(channel)
             }
-        }).also { it.start() }
+        }, onCapturing = { if (!guidance) main.post { carAudioReady() } }).also { it.start() }
+    }
+
+    // ------------------------------------------------------------------ music around the connection
+    // Like Android Auto: music the phone starts as the car connects (Spotify on the car's Bluetooth)
+    // must not play on the phone's speaker until the car takes the sound, and music stops when the
+    // car goes instead of carrying on from the phone (user's report, 2026-11-08).
+
+    /** Music this session paused because the car couldn't take the sound yet. */
+    private var pausedUntilCarAudio = false
+    @Volatile private var carAudioCapturing = false
+    private var holdUntilMs = 0L
+
+    /** Until the car's sound is ready (at most [HOLD_MUSIC_MS]), pause any music that starts. */
+    private val holdMusic = object : Runnable {
+        override fun run() {
+            if (carAudioCapturing || android.os.SystemClock.elapsedRealtime() > holdUntilMs) return
+            if (media.playback.value?.playing == true) {
+                if (!pausedUntilCarAudio) DiagLog.add("car audio: music started before the car's sound was ready, holding it")
+                pausedUntilCarAudio = true
+                media.pause()
+            }
+            main.postDelayed(this, 250)
+        }
+    }
+
+    private fun holdMusicUntilCarAudio() {
+        if (!settings.carAudio) return
+        holdUntilMs = android.os.SystemClock.elapsedRealtime() + HOLD_MUSIC_MS
+        main.post(holdMusic)
+    }
+
+    /** The car takes the phone's sound now: music held at connect plays on. */
+    private fun carAudioReady() {
+        carAudioCapturing = true
+        main.removeCallbacks(holdMusic)
+        if (pausedUntilCarAudio) {
+            pausedUntilCarAudio = false
+            // A moment for the capture to settle, so the first notes go to the car.
+            main.postDelayed({ if (media.playback.value?.playing != true) media.playPause() }, 500)
+            DiagLog.add("car audio: ready, music resumes")
+        }
+    }
+
+    /** The car is gone: music stops instead of carrying on from the phone's speaker. */
+    private fun pauseMusicOnLeave() {
+        main.removeCallbacks(holdMusic)
+        if (carAudioCapturing && media.playback.value?.playing == true) {
+            media.pause()
+            DiagLog.add("car audio: car gone, music paused")
+        }
+        carAudioCapturing = false
     }
 
     /** Music: full focus while it plays. */
@@ -705,6 +757,7 @@ class CarSession(
     // ------------------------------------------------------------------ teardown
 
     private fun teardown() {
+        pauseMusicOnLeave()
         net.prototux.aare.obd.ObdReader.stop(context)
         if (settings.accessibilityInCarOnly) net.prototux.aare.mirror.AccessibilitySwitch.carGone(context)
         main.removeCallbacks(focusFallback)
@@ -774,6 +827,8 @@ class CarSession(
 
         /** How long the car gets to answer the video focus request before we send video anyway. */
         private const val FOCUS_ANSWER_MS = 3_000L
+        /** How long music is held at connect while the car's sound gets ready. */
+        private const val HOLD_MUSIC_MS = 20_000L
         /** How long the car gets to answer an audio focus request before the sound plays anyway. */
         private const val AUDIO_FOCUS_ANSWER_MS = 1_000L
         private const val VIDEO_REPORT_MS = 5_000L

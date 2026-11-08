@@ -22,6 +22,8 @@ class CarAudioOut(
     private val channel: AudioChannel,
     private val focus: Focus,
     private val onFailed: () -> Unit = {},
+    /** The capture is running: phone sound goes to the car from now on (capture thread). */
+    private val onCapturing: () -> Unit = {},
 ) {
     interface Focus {
         /** About to play (true) or done (false). */
@@ -72,6 +74,7 @@ class CarAudioOut(
             onFailed()
             return
         }
+        onCapturing()
         // Android Auto's chunk size (see [chunkBytes]): the head unit may expect exactly that.
         val chunk = chunkBytes(rate, channels)
         val buf = ByteArray(10 + chunk)

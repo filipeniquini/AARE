@@ -43,6 +43,8 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     protected var configIndices: List<Int> = emptyList()
     private val sessionCounter = AtomicInteger(0)
     @Volatile protected var mediaSession = 0
+    /** The session before the current one: its late acks are ignored, as Android Auto does. */
+    @Volatile private var previousSession = -1
     protected val unacked = AtomicInteger(0)
     /** Messages sent and not acked yet (diagnostics). */
     val inFlight: Int get() = unacked.get()
@@ -76,6 +78,10 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
             }
             MediaMsg.ACK -> {
                 val ack = Ack.parseFrom(msg.bodyBytes())
+                // Acks for a stopped stream, or for the session before this one, are for frames
+                // the window no longer counts (Android Auto drops them the same way).
+                if (!started) return
+                if (ack.hasSessionId() && ack.sessionId != mediaSession && ack.sessionId == previousSession) return
                 ackSeen = true
                 acksReceived++
                 val n = if (ack.hasAck()) ack.ack else 1
@@ -103,6 +109,7 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     protected fun stopStream() {
         if (!started) return
         started = false
+        previousSession = mediaSession
         send(MediaMsg.STOP, Stop.getDefaultInstance())
     }
 
@@ -227,6 +234,7 @@ class VideoChannel(
         chosen = configs[index]
         chosenIndex = index
         focusAnswered = false
+        encoderStarted = false
         synchronized(lock) { sentAt.clear() }
         // Ask to be shown; head units answer with a focus notification. The stream starts then, as
         // with Android Auto: a VW MIB head unit shows nothing and acks nothing when it starts earlier.
@@ -275,15 +283,28 @@ class VideoChannel(
         return true
     }
 
+    /** The encoder has been started once for this configuration; later focus gains only restart the stream. */
+    private var encoderStarted = false
+    /** Times the stream was stopped for a focus loss and started again (diagnostics). */
+    @Volatile var restarts = 0
+        private set
+
     @Synchronized
     private fun setFocus(projected: Boolean) {
         focusAnswered = true
         val changed = projected != focused
         focused = projected
+        if (!projected && started && encoderStarted) {
+            // As Android Auto does when the car takes the screen (reverse camera, its own menus):
+            // stop the stream, and start a new session when the screen comes back. Keeping one
+            // stream across the switch left the VW Play's picture black afterwards (2026-11-08).
+            stopStream()
+        }
         if (projected && !started) {
             val config = chosen ?: return
             startStream(chosenIndex)
-            listener.onVideoStart(chosenIndex, config)
+            if (encoderStarted) restarts++
+            else { encoderStarted = true; listener.onVideoStart(chosenIndex, config) }
         }
         if (changed) {
             // Frames in flight when the car switched screens (reverse camera, its own menus) are
@@ -394,6 +415,7 @@ class VideoChannel(
     override fun onClosed() {
         super.onClosed()
         focused = false
+        encoderStarted = false
         synchronized(lock) { while (pending.isNotEmpty()) pending.removeFirst().let { it.recycle(it.buf) }; sentAt.clear(); pendingFrames = 0 }
     }
 
