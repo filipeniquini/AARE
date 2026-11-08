@@ -389,6 +389,7 @@ class CarSession(
             else -> s.javaClass.simpleName.lowercase()
         })
         put("driving", ui.drivingRestricted)
+        put("car_driving", runtime.carDriving) // the car's own signal, before passenger mode
         put("night", ui.night)
         put("rtt_ms", aap.lastRttMs)
         video?.let { ch ->
@@ -440,7 +441,8 @@ class CarSession(
         videoConfig = config
         val (w, h) = resolution(config.codecResolution)
         // "Prefer 60 fps" off: 30 fps even when the car only offers 60 (it shows fewer frames fine).
-        val fps = if (settings.prefer60fps) fpsOf(config) else minOf(fpsOf(config), 30)
+        // The car's rate, capped by the user's choice: the encoder sends at most that many frames.
+        val fps = minOf(fpsOf(config), settings.maxVideoFps)
         val dpi = scaledDensity(if (config.density > 0) config.density else defaultDensity(minOf(w, h)), settings.uiScalePercent)
         val marginW = config.widthMargin
         val marginH = config.heightMargin

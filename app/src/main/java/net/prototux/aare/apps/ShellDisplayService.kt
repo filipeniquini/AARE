@@ -70,9 +70,39 @@ class ShellDisplayService : IShellDisplay.Stub {
         val e = event ?: return
         val id = display?.display?.displayId ?: return
         e.source = InputDevice.SOURCE_TOUCHSCREEN
+        if (e.actionMasked == MotionEvent.ACTION_DOWN) wakeIfAsleep(id)
         inject(e, id)
         e.recycle()
     }
+
+    /**
+     * With the phone's screen off, Android drops touches on every display of its power group, and
+     * this display stays in the phone's (Android 17 ignores OWN_DISPLAY_GROUP for it): mirrored
+     * apps ignored the driver while the phone was locked (2026-11-08 drive). Wake it first, as
+     * `input -d <display> keyevent WAKEUP` does; the phone shows its lock screen until it times out.
+     */
+    private fun wakeIfAsleep(displayId: Int) {
+        if (interactive() != false) return
+        val t = SystemClock.uptimeMillis()
+        for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            inject(KeyEvent(t, t, action, KeyEvent.KEYCODE_WAKEUP, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD), displayId, WAIT_FOR_RESULT)
+        }
+        // The touch right after must find the display awake.
+        val until = SystemClock.uptimeMillis() + 500
+        while (interactive() == false && SystemClock.uptimeMillis() < until) SystemClock.sleep(10)
+    }
+
+    private var power: Any? = null
+
+    /** IPowerManager.isInteractive() (hidden), null if it can't be asked. */
+    @SuppressLint("PrivateApi")
+    private fun interactive(): Boolean? = runCatching {
+        val pm = power ?: run {
+            val binder = HiddenApiBypass.invoke(Class.forName("android.os.ServiceManager"), null, "getService", "power")
+            HiddenApiBypass.invoke(Class.forName("android.os.IPowerManager\$Stub"), null, "asInterface", binder)!!.also { power = it }
+        }
+        HiddenApiBypass.invoke(pm.javaClass, pm, "isInteractive") as Boolean
+    }.getOrNull()
 
     override fun key(keyCode: Int) {
         val id = display?.display?.displayId ?: return
@@ -119,11 +149,11 @@ class ShellDisplayService : IShellDisplay.Stub {
         }
     }
 
-    private fun inject(event: InputEvent, displayId: Int) {
+    private fun inject(event: InputEvent, displayId: Int, mode: Int = ASYNC) {
         try {
             HiddenApiBypass.invoke(event.javaClass, event, "setDisplayId", displayId)
             val manager = inputManager()
-            HiddenApiBypass.invoke(manager.javaClass, manager, "injectInputEvent", event, 0 /* async */)
+            HiddenApiBypass.invoke(manager.javaClass, manager, "injectInputEvent", event, mode)
         } catch (e: Exception) {
             Log.w(TAG, "can't inject input", e)
         }
@@ -187,6 +217,9 @@ class ShellDisplayService : IShellDisplay.Stub {
 
     private companion object {
         const val TAG = "AareShellDisplay"
+        /** InputManager injection modes (hidden). */
+        const val ASYNC = 0
+        const val WAIT_FOR_RESULT = 1
         const val NAME = "AARE apps"
         const val SHELL_PACKAGE = "com.android.shell"
 

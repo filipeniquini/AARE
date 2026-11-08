@@ -76,17 +76,17 @@ class BitrateControllerTest {
     @Test
     fun stepsUpSlowlyAndNeverAboveTheStart() {
         val low = State(3_000_000)
-        assertEquals(3_000_000, run(low, 39, congested = false).bitrate) // 9.75 s
-        assertEquals(3_300_000, run(low, 40, congested = false).bitrate) // 10 s
+        assertEquals(3_000_000, run(low, 15, congested = false).bitrate) // 3.75 s
+        assertEquals(3_300_000, run(low, 16, congested = false).bitrate) // 4 s
         assertEquals(start, run(low, 2_000, congested = false).bitrate)
     }
 
     @Test
     fun congestionResetsTheCalmTimer() {
-        var s = run(State(3_000_000), 39, congested = false)
+        var s = run(State(3_000_000), 15, congested = false)
         s = run(s, 1, congested = true)
         assertEquals(0L, s.calmMs)
-        assertEquals(3_000_000, run(s, 39, congested = false).bitrate)
+        assertEquals(3_000_000, run(s, 15, congested = false).bitrate)
     }
 
     @Test

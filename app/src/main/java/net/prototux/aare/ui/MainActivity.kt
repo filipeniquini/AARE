@@ -365,7 +365,7 @@ private fun Check(title: String, subtitle: String, done: Boolean, onClick: () ->
 @Composable
 private fun ConnectionSettings(settings: Settings) {
     var wireless by remember { mutableStateOf(settings.wireless) }
-    var fps60 by remember { mutableStateOf(settings.prefer60fps) }
+    var maxFps by remember { mutableStateOf(settings.maxVideoFps) }
     var maxH by remember { mutableIntStateOf(settings.maxVideoHeight) }
     var resume by remember { mutableStateOf(settings.resumeMedia) }
     var cars by remember { mutableStateOf(settings.knownCars) }
@@ -397,7 +397,10 @@ private fun ConnectionSettings(settings: Settings) {
             Text(stringResource(R.string.obd_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Section(stringResource(R.string.setup_section_video)) {
-            Toggle(stringResource(R.string.setup_toggle_60fps_title), stringResource(R.string.setup_toggle_60fps_subtitle), fps60) { fps60 = it; settings.prefer60fps = it }
+            Choices(stringResource(R.string.setup_toggle_60fps_title), Settings.VIDEO_FPS_CHOICES.map { "$it" to "$it" }, "$maxFps") {
+                maxFps = it.toInt(); settings.maxVideoFps = maxFps
+            }
+            Text(stringResource(R.string.setup_toggle_60fps_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Choices(stringResource(R.string.setup_choice_max_resolution), listOf(480, 720, 1080, 1440).map { "$it" to "${it}p" }, "$maxH") {
                 maxH = it.toInt(); settings.maxVideoHeight = maxH
             }

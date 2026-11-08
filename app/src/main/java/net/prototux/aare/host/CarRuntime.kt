@@ -238,7 +238,8 @@ class CarRuntime(
         set(v) { field = v; applyScreenSettings() }
 
     /** The car's driving signal (parked or not), before the passenger-mode setting. */
-    private var carDriving = false
+    var carDriving = false
+        private set
 
     /** The car says it's moving (true) or parked. */
     fun carDriving(driving: Boolean) {

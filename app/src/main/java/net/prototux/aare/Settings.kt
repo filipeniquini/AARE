@@ -44,10 +44,17 @@ class Settings(context: Context) {
         get() = prefs.getInt(KEY_UI_SCALE, 100)
         set(v) = prefs.edit { putInt(KEY_UI_SCALE, v) }
 
-    /** Prefer 60 fps configurations when the head unit offers them. */
-    var prefer60fps: Boolean
-        get() = prefs.getBoolean("prefer_60fps", true)
-        set(v) = prefs.edit { putBoolean("prefer_60fps", v) }
+    /** Prefer 60 fps configurations when the head unit offers them (on whenever [maxVideoFps] is above 30). */
+    val prefer60fps: Boolean get() = maxVideoFps > 30
+
+    /**
+     * Most frames per second sent to the car (see [VIDEO_FPS_CHOICES]). 50 by default: at 60 the
+     * VW Play fell behind with a moving map (frames dropped, the bitrate down to 1.5 Mb/s, gaps in
+     * the sound, 2026-11-08 drive), and 30 felt slow to the user. The old "Prefer 60 fps" off meant 30.
+     */
+    var maxVideoFps: Int
+        get() = prefs.getInt("max_video_fps", if (prefs.getBoolean("prefer_60fps", true)) 50 else 30)
+        set(v) = prefs.edit { putInt("max_video_fps", v) }
 
     /** Where the car screen's bar goes: next to the driver ([RAIL_AUTO]), [RAIL_LEFT], [RAIL_RIGHT] or [RAIL_BOTTOM]. */
     var railPosition: String
@@ -264,6 +271,7 @@ class Settings(context: Context) {
         val UI_SCALES = listOf(100, 90, 80, 70)
         /** Phone app sizes on the car (density in dpi), smallest first. */
         const val MAP_CARD_DEFAULT = "com.google.android.apps.maps"
+        val VIDEO_FPS_CHOICES = listOf(30, 50, 60)
         val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
         /** [phoneAppsDpi] value for "tablet": the largest size at which apps still lay out as on a tablet (see PhoneApps.tabletDpi). */
         const val PHONE_APPS_DPI_TABLET = 0

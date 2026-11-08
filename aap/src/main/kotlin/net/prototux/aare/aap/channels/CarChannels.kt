@@ -99,9 +99,11 @@ class SensorChannel(service: Service, private val listener: Listener) : ServiceC
 }
 
 /**
- * Turn-by-turn for the instrument cluster / head-unit widgets. Newer head units read
- * NavigationState + CurrentPosition; older ones only the (deprecated) turn and distance events,
- * so we send both.
+ * Turn-by-turn for the instrument cluster / head-unit widgets. Head units on protocol 1.6 and up
+ * read NavigationState + CurrentPosition; older ones only the (deprecated) turn and distance
+ * events, and answer the newer messages with "unexpected message". Android Auto sends one set or
+ * the other by the head unit's version, never both: the VW Play (1.5) got two refused messages
+ * on every update when we sent both (2026-11-08 drive).
  */
 class NavigationStatusChannel(service: Service) : ServiceChannel(service, "navstatus") {
     val wantsImages = service.navigationStatusService.type ==
@@ -119,8 +121,14 @@ class NavigationStatusChannel(service: Service) : ServiceChannel(service, "navst
         }
     }
 
-    fun status(s: NavigationStatus.NavigationStatusEnum) =
+    /** The head unit reads NavigationState/CurrentPosition (protocol 1.6+), not the old events. */
+    private val modern: Boolean get() = session.headUnitAtLeast(1, 6)
+
+    fun status(s: NavigationStatus.NavigationStatusEnum) {
+        // Older head units don't know REROUTING (Android Auto leaves it out for them too).
+        if (s == NavigationStatus.NavigationStatusEnum.REROUTING && !modern) return
         send(NavStatusMsg.STATUS, NavigationStatus.newBuilder().setStatus(s).build(), Priority.INPUT)
+    }
 
     /** Sends the current step; rate-limited to what the head unit asked for. */
     fun update(
@@ -130,10 +138,13 @@ class NavigationStatusChannel(service: Service) : ServiceChannel(service, "navst
         val now = System.nanoTime() / 1_000_000
         if (!force && now - lastSentMs < minIntervalMs) return
         lastSentMs = now
-        state?.let { send(NavStatusMsg.STATE, it, Priority.INPUT) }
-        position?.let { send(NavStatusMsg.CURRENT_POSITION, it, Priority.INPUT) }
-        turn?.let { send(NavStatusMsg.TURN_EVENT, it, Priority.INPUT) }
-        distance?.let { send(NavStatusMsg.DISTANCE_EVENT, it, Priority.INPUT) }
+        if (modern) {
+            state?.let { send(NavStatusMsg.STATE, it, Priority.INPUT) }
+            position?.let { send(NavStatusMsg.CURRENT_POSITION, it, Priority.INPUT) }
+        } else {
+            turn?.let { send(NavStatusMsg.TURN_EVENT, it, Priority.INPUT) }
+            distance?.let { send(NavStatusMsg.DISTANCE_EVENT, it, Priority.INPUT) }
+        }
     }
 }
 

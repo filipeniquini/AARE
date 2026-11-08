@@ -58,8 +58,8 @@
     <string name="setup_check_mock_location_title">Permitir que a AARE defina a localização</string>
     <string name="setup_check_mock_location_subtitle">Opções de programador &gt; Selecionar aplicação de localização fictícia &gt; AARE</string>
     <string name="setup_section_video">Vídeo</string>
-    <string name="setup_toggle_60fps_title">Preferir 60 fps</string>
-    <string name="setup_toggle_60fps_subtitle">Mais suave quando o carro o suporta. Desligado: no máximo 30 quadros por segundo, mais leve para o telemóvel. Vale a partir da próxima ligação.</string>
+    <string name="setup_toggle_60fps_title">Quadros por segundo (máximo)</string>
+    <string name="setup_toggle_60fps_subtitle">Mais é mais suave e responde mais rápido, mas pesa mais no telemóvel e no carro: a 60 alguns carros não acompanham (imagem mais borrada, falhas no som). Vale a partir da próxima ligação.</string>
     <string name="setup_choice_max_resolution">Resolução máxima</string>
     <string name="setup_hint_lower_resolution">Uma resolução mais baixa consome menos bateria e dados. Vale a partir da próxima ligação ao carro.</string>
     <string name="phone_choice_quality">Qualidade do ecrã do telemóvel</string>

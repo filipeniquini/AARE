@@ -31,7 +31,9 @@ class BitrateController(
         /** Frames are looked at in windows of this length. */
         val tickMs: Long = 250,
         val downAfterMs: Long = 1_500,
-        val upAfterMs: Long = 10_000,
+        // Back up every 4 s once the link is calm: from the floor to full quality took 3.5 minutes
+        // at every 10 s on the 2026-11-08 drive (blurry the whole time); about 1 minute now.
+        val upAfterMs: Long = 4_000,
         val downFactor: Double = 0.75,
         val upFactor: Double = 1.10,
         /** A backlog overflow (frames dropped) counts as this much extra congestion. */

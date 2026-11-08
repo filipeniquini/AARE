@@ -58,8 +58,8 @@
     <string name="setup_check_mock_location_title">Allow AARE to set the location</string>
     <string name="setup_check_mock_location_subtitle">Developer options &gt; Select mock location app &gt; AARE</string>
     <string name="setup_section_video">Video</string>
-    <string name="setup_toggle_60fps_title">Prefer 60 fps</string>
-    <string name="setup_toggle_60fps_subtitle">Smoother when the car supports it. Off: 30 frames per second at most, lighter on the phone. Takes effect the next time the car connects.</string>
+    <string name="setup_toggle_60fps_title">Frames per second (most)</string>
+    <string name="setup_toggle_60fps_subtitle">More is smoother and more responsive, but heavier on the phone and the car: at 60 some cars fall behind (blurrier picture, gaps in the sound). Takes effect the next time the car connects.</string>
     <string name="setup_choice_max_resolution">Maximum resolution</string>
     <string name="setup_hint_lower_resolution">Lower uses less battery and bandwidth. Takes effect the next time the car connects.</string>
     <string name="phone_choice_quality">Phone screen quality</string>

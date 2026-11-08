@@ -319,13 +319,18 @@ class AapSession(
             return
         }
         if (msg.id == UNEXPECTED_MESSAGE) {
-            // The car's way of saying we sent something it didn't expect on this channel: keep every one.
-            log.w("car says it got an unexpected message on channel ${ch.id} (${ch.name})")
+            // The car's way of saying we sent something it didn't expect on this channel. The first
+            // few, then one in a hundred: a repeated one flooded the connection log on a drive.
+            val n = unexpectedCounts.merge(ch.id, 1, Int::plus) ?: 1
+            if (n <= 3 || n % 100 == 0) log.w("car says it got an unexpected message on channel ${ch.id} (${ch.name})" + if (n > 3) ", $n so far" else "")
         } else if (carMessagesSeen.add(msg.channel to msg.id)) {
             log.d("car message: channel ${ch.id} (${ch.name}) id 0x${msg.id.toString(16)}, first of its kind")
         }
         runHandler(ch) { ch.onMessage(msg) }
     }
+
+    /** "Unexpected message" answers per channel (reader thread only). */
+    private val unexpectedCounts = HashMap<Int, Int>()
 
     /** Channel and message id of what the car has sent, to log each kind once (reader thread only). */
     private val carMessagesSeen = HashSet<Pair<Int, Int>>()
