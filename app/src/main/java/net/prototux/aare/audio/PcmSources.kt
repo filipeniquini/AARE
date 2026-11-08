@@ -183,6 +183,9 @@ class ShizukuSource(private val context: Context, private val rate: Int, private
     private val args = Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellAudioService::class.java.name))
         .daemon(false)
         .processNameSuffix("audio")
+        // Its own record: Shizuku keys user services by class and tag, and the short-lived helpers
+        // (Bluetooth address, switches) use the same class; sharing one killed the capture (2026-11-08).
+        .tag("audio")
         .debuggable(BuildConfig.DEBUG)
         .version(BuildConfig.VERSION_CODE)
     private val connection = object : ServiceConnection {

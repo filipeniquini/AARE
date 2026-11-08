@@ -51,7 +51,8 @@ object AccessibilitySwitch {
         var shell: IShellAudio? = null
         val args = Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellAudioService::class.java.name))
             .daemon(false)
-            .processNameSuffix("switch")
+            .processNameSuffix("a11y")
+            .tag("a11y")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
         val connection = object : ServiceConnection {

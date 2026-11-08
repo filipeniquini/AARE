@@ -19,7 +19,8 @@ object ShellOnce {
         var shell: IShellAudio? = null
         val args = Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellAudioService::class.java.name))
             .daemon(false)
-            .processNameSuffix("switch")
+            .processNameSuffix("once")
+            .tag("once")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
         val connection = object : ServiceConnection {

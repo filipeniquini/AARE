@@ -38,6 +38,7 @@ object AndroidAutoSwitch {
         val args = Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellAudioService::class.java.name))
             .daemon(false)
             .processNameSuffix("switch")
+            .tag("switch")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
         val service = CompletableDeferred<IShellAudio?>()
