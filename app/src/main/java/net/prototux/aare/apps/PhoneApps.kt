@@ -30,9 +30,22 @@ object PhoneApps {
     /** A launchable phone app. */
     class App(val component: ComponentName, val label: String, val icon: Bitmap?, val category: Int)
 
-    enum class Kind { NAVIGATION, MUSIC, VIDEO, SOCIAL, OTHER }
+    enum class Kind { NAVIGATION, MUSIC, VIDEO, SOCIAL, ASSISTANT, OTHER }
+
+    /** Gemini, opened mirrored in place of Google's car assistant (which only Android Auto may bind). */
+    const val GEMINI = "com.google.android.apps.bard"
+    /** Where Gemini's screens live (the Gemini app hands over to the Google app). */
+    val ASSISTANT_PACKAGES = setOf(GEMINI, "com.google.android.googlequicksearchbox")
 
     fun available() = CaptureMethods.shizukuAvailable()
+
+    /**
+     * The biggest density at which a [width]×[height] display is still a tablet to apps (smallest
+     * width 600 dp): YouTube and others switch to their tablet layout there (the user's wish,
+     * 2026-11-08). About 174 dpi on the VW Play's full screen, 168 in the GTS map card.
+     */
+    fun tabletDpi(width: Int, height: Int): Int = (minOf(width, height) * 160 / TABLET_SW_DP).coerceIn(100, 320)
+    private const val TABLET_SW_DP = 600
 
     /** Apps opened full screen from the car's grid. */
     val full = PhoneAppHost("apps")
@@ -70,6 +83,7 @@ object PhoneApps {
      * plus well-known apps that don't declare one.
      */
     fun kind(packageName: String, category: Int): Kind = when {
+        packageName in ASSISTANT_PACKAGES -> Kind.ASSISTANT
         packageName in SOCIAL -> Kind.SOCIAL
         packageName in NAVIGATION -> Kind.NAVIGATION
         packageName in MUSIC -> Kind.MUSIC

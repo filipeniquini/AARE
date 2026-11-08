@@ -33,7 +33,13 @@ data class CarDimens(
     val gutter: Dp = 12.dp,
     val cardRadius: Dp = 28.dp,
     val iconSize: Dp = 36.dp,
+    /** Buttons and icons on the rail (the GTS bar is slimmer than Google's 76 dp). */
+    val railButton: Dp = 76.dp,
+    val railIcon: Dp = 36.dp,
 )
+
+/** The GTS style's slimmer bottom bar, as the user asked (2026-11-08): about 9 mm buttons on the VW Play. */
+val GtsCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp)
 
 val LocalCarDimens = staticCompositionLocalOf { CarDimens() }
 
@@ -92,7 +98,7 @@ private val DayColors: ColorScheme = lightColorScheme(
     outlineVariant = Color(0xFFBEC9C6),
 )
 
-/** The GTS style: always dark, graphite surfaces and one red accent, like the car's own instruments. */
+/** The GTS style by day (its only look until 2026-11-08): graphite surfaces and one red accent, like the car's own instruments. */
 private val GtsColors: ColorScheme = darkColorScheme(
     primary = Color(0xFFE4002B),
     onPrimary = Color.White,
@@ -117,6 +123,37 @@ private val GtsColors: ColorScheme = darkColorScheme(
     surfaceContainerHighest = Color(0xFF262930),
     outline = Color(0xFF50545C),
     outlineVariant = Color(0xFF2A2D34),
+    error = Color(0xFFFF8A80),
+)
+
+/**
+ * The GTS style at night: absolute black (the car screen's own black, nothing glows), cards in
+ * near-black and the same red.
+ */
+private val GtsNightColors: ColorScheme = darkColorScheme(
+    primary = Color(0xFFE4002B),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF3A0812),
+    onPrimaryContainer = Color(0xFFFFD9DD),
+    secondary = Color(0xFFA8ADB6),
+    onSecondary = Color(0xFF16181C),
+    secondaryContainer = Color(0xFF16171A),
+    onSecondaryContainer = Color(0xFFE0E1E5),
+    tertiary = Color(0xFFFFB86B),
+    onTertiary = Color(0xFF2E1500),
+    background = Color.Black,
+    onBackground = Color(0xFFE6E7EA),
+    surface = Color.Black,
+    onSurface = Color(0xFFE6E7EA),
+    surfaceVariant = Color(0xFF111214),
+    onSurfaceVariant = Color(0xFF9A9FA8),
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF060607),
+    surfaceContainer = Color(0xFF0A0A0C),
+    surfaceContainerHigh = Color(0xFF111214),
+    surfaceContainerHighest = Color(0xFF1A1B1E),
+    outline = Color(0xFF3E4148),
+    outlineVariant = Color(0xFF1C1D20),
     error = Color(0xFFFF8A80),
 )
 
@@ -169,14 +206,17 @@ private val CarShapes = Shapes(
 /** Whether the car screen uses the GTS style (its own home screen layout). */
 val LocalGtsStyle = staticCompositionLocalOf { false }
 
+/** Whether the car screen is in its night colors (the GTS day and night are both dark). */
+val LocalCarNight = staticCompositionLocalOf { true }
+
 @Composable
 fun CarTheme(night: Boolean, gts: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (gts) GtsColors else if (night) NightColors else DayColors,
+        colorScheme = if (gts) (if (night) GtsNightColors else GtsColors) else if (night) NightColors else DayColors,
         typography = if (gts) GtsType else CarType,
         shapes = CarShapes,
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(LocalGtsStyle provides gts, content = content)
+        androidx.compose.runtime.CompositionLocalProvider(LocalGtsStyle provides gts, LocalCarNight provides night, content = content)
     }
 }
 

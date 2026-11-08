@@ -130,6 +130,11 @@ class Settings(context: Context) {
         get() = prefs.getStringSet("phone_apps_shown", emptySet()) ?: emptySet()
         set(v) = prefs.edit { putStringSet("phone_apps_shown", v) }
 
+    /** Whether each app opened natively or refused AARE ("package@version=NATIVE|REFUSED"), see NativeCompat. */
+    var nativeResults: Set<String>
+        get() = prefs.getStringSet("native_results", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("native_results", HashSet(v)) }
+
     /**
      * Screen density the phone apps get on the car, separate from the car UI's: apps lay out by
      * their width in dp, and the car's own density made some of them tablet-sized and tiny.
@@ -260,6 +265,8 @@ class Settings(context: Context) {
         /** Phone app sizes on the car (density in dpi), smallest first. */
         const val MAP_CARD_DEFAULT = "com.google.android.apps.maps"
         val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
+        /** [phoneAppsDpi] value for "tablet": the largest size at which apps still lay out as on a tablet (see PhoneApps.tabletDpi). */
+        const val PHONE_APPS_DPI_TABLET = 0
         /** The resolutions offered for the mirrored phone screen, sharpest first. */
         val MIRROR_SCALES = listOf(100, 75, 50)
         const val WALLPAPER_CUSTOM = "custom"

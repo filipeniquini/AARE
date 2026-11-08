@@ -47,10 +47,12 @@ internal fun PhoneAppScreen(
     val locked = rememberKeyguardLocked()
     val ready by host.ready.collectAsState()
     val blockedLocked = locked && kind == PhoneApps.Kind.SOCIAL
-    val blockedDriving = driving && kind != PhoneApps.Kind.NAVIGATION && kind != PhoneApps.Kind.MUSIC
+    // The voice assistant is for driving: it stays open like navigation and music.
+    val blockedDriving = driving && kind != PhoneApps.Kind.NAVIGATION && kind != PhoneApps.Kind.MUSIC && kind != PhoneApps.Kind.ASSISTANT
     val show = !blockedLocked && !blockedDriving
     // Their own size, chosen on the phone: the car UI's density made some apps tablet-sized and tiny.
-    val dpi = runtime.settings.phoneAppsDpi
+    val setting = runtime.settings.phoneAppsDpi
+    fun dpiFor(w: Int, h: Int) = if (setting == net.prototux.aare.Settings.PHONE_APPS_DPI_TABLET) PhoneApps.tabletDpi(w, h) else setting
 
     DisposableEffect(Unit) {
         val full = host === PhoneApps.full
@@ -69,10 +71,10 @@ internal fun PhoneAppScreen(
                             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
                                 surface = Surface(st)
                                 // Opened each time it's shown: an app already running comes to the front as it was.
-                                host.attach(context, surface!!, w, h, dpi) { host.open(component) }
+                                host.attach(context, surface!!, w, h, dpiFor(w, h)) { host.open(component) }
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
-                                surface?.let { host.attach(context, it, w, h, dpi) }
+                                surface?.let { host.attach(context, it, w, h, dpiFor(w, h)) }
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                 host.detach()

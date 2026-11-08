@@ -838,7 +838,9 @@ private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
         if (!net.prototux.aare.apps.PhoneApps.available()) {
             Text(stringResource(R.string.apps_need_shizuku), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
-        Choices(stringResource(R.string.phone_apps_size), Settings.PHONE_APP_DPIS.mapIndexed { i, d -> "$d" to "${i + 1}" }, "$dpi") {
+        Choices(stringResource(R.string.phone_apps_size),
+            listOf("${Settings.PHONE_APPS_DPI_TABLET}" to stringResource(R.string.phone_apps_size_tablet)) +
+                Settings.PHONE_APP_DPIS.mapIndexed { i, d -> "$d" to "${i + 1}" }, "$dpi") {
             dpi = it.toInt(); settings.phoneAppsDpi = dpi
         }
         Text(stringResource(R.string.phone_apps_size_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -65,6 +65,12 @@ class CarAppConnection(
     private val env: HostEnvironment,
     /** The instrument cluster's session of a navigation app (FEATURE_CLUSTER), not its main one. */
     val cluster: Boolean = false,
+    /**
+     * Only find out whether the app accepts AARE: stop after the handshake (where it checks its
+     * host). Creating it would make the app open a virtual display of its own (the library's car
+     * context) that outlives the test while its process lives.
+     */
+    private val probe: Boolean = false,
 ) {
     enum class Status { IDLE, CONNECTING, READY, FAILED }
 
@@ -134,7 +140,11 @@ class CarAppConnection(
         val ok = runCatching {
             context.bindService(bindIntent, serviceConnection,
                 Context.BIND_AUTO_CREATE or Context.BIND_INCLUDE_CAPABILITIES or Context.BIND_IMPORTANT)
-        }.getOrElse { log("bind failed", it); false }
+        }.getOrElse {
+            log("bind failed", it)
+            if (it is SecurityException) refused("the system won't let AARE bind it")
+            false
+        }
         bound = ok
         if (!ok) fail("Could not start ${info.label}")
     }
@@ -245,7 +255,10 @@ class CarAppConnection(
 
         override fun onServiceDisconnected(name: ComponentName) = onAppDied()
         override fun onBindingDied(name: ComponentName) = onAppDied()
-        override fun onNullBinding(name: ComponentName) = fail("${info.label} refused the connection")
+        override fun onNullBinding(name: ComponentName) {
+            refused("no binder for AARE")
+            fail("${info.label} refused the connection")
+        }
     }
 
     private fun handshake(app: ICarApp) {
@@ -256,13 +269,19 @@ class CarAppConnection(
             val appMin = appInfo?.minCarAppApiLevel ?: CarAppApiLevels.LEVEL_1
             libraryVersion = appInfo?.libraryDisplayVersion ?: ""
             if (appMin > hostMax) {
+                refused("needs car API $appMin")
                 fail("${info.label} needs car API level $appMin; this host supports $hostMax")
                 return@call
             }
             apiLevel = minOf(appLatest, hostMax)
             Log.i(TAG, "${info.packageName}: library $libraryVersion, API $appMin..$appLatest, negotiated $apiLevel")
             val handshake = Bundleable.create(HandshakeInfo(context.packageName, apiLevel))
-            call("onHandshakeCompleted", onSuccess = { create(app) }) { app.onHandshakeCompleted(handshake, it) }
+            call("onHandshakeCompleted", onSuccess = {
+                if (probe) {
+                    NativeCompat.worked(context, info.packageName, info.label)
+                    status = Status.READY
+                } else create(app)
+            }) { app.onHandshakeCompleted(handshake, it) }
         }) { app.getAppInfo(it) }
     }
 
@@ -279,6 +298,7 @@ class CarAppConnection(
                 }
                 status = Status.READY
                 retries = 0
+                if (!cluster) NativeCompat.worked(context, info.packageName, info.label)
                 screenStack = emptyList() // a new session: its first template is never a refresh
                 fetchTemplate()
                 applyVisibility()
@@ -353,6 +373,11 @@ class CarAppConnection(
         if (visible && retries++ < 3) main.postDelayed({ if (visible && status == Status.FAILED) connect() }, 1_000L * retries)
     }
 
+    /** The app turned AARE down as its host: from now on it opens mirrored (see [NativeCompat]). */
+    private fun refused(why: String) {
+        if (!cluster) NativeCompat.refusedNow(context, info.packageName, info.label, why)
+    }
+
     private fun fail(message: String) {
         Log.w(TAG, "${info.packageName}: $message")
         cleanup()
@@ -411,8 +436,10 @@ class CarAppConnection(
     private fun onFailure(call: String, message: String) {
         Log.w(TAG, "${info.packageName}.$call failed: ${message.lineSequence().firstOrNull()}")
         if (status == Status.CONNECTING) {
+            val hostRefused = "Unknown host" in message || "not allowed" in message || "SecurityException" in message
+            if (hostRefused) refused("accepts only Google's Android Auto")
             fail(when {
-                "Unknown host" in message || "not allowed" in message || "SecurityException" in message ->
+                hostRefused ->
                     "${info.label} only accepts Google's Android Auto. It needs to allow AARE (see the app list on the phone)."
                 else -> "${info.label} couldn't start: ${message.lineSequence().first().take(120)}"
             })

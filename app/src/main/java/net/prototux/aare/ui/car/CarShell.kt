@@ -164,7 +164,7 @@ private fun ContentArea(
 private fun Rail(state: CarUiState, actions: CarActions, horizontal: Boolean) {
     // The "dark bar" setting: night colors for the rail even when the rest is in day colors.
     if (state.darkBar && !state.night) {
-        CarTheme(night = true) { RailContent(state, actions, horizontal) }
+        CarTheme(night = true, gts = net.prototux.aare.ui.theme.LocalGtsStyle.current) { RailContent(state, actions, horizontal) }
     } else {
         RailContent(state, actions, horizontal)
     }
@@ -267,10 +267,10 @@ private fun RailButton(icon: ImageVector, label: String, selected: Boolean, onCl
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Box(
-        Modifier.size(d.touchTarget).clip(RoundedCornerShape(24.dp)).background(bg).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
+        Modifier.size(d.railButton).clip(RoundedCornerShape(24.dp)).background(bg).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = fg, modifier = Modifier.size(d.iconSize))
+        Icon(icon, contentDescription = label, tint = fg, modifier = Modifier.size(d.railIcon))
     }
 }
 
@@ -283,10 +283,10 @@ private fun RailApp(app: CarAppEntry?, fallback: ImageVector, selected: Boolean,
     }
     val ring = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Box(
-        Modifier.size(d.touchTarget).clip(RoundedCornerShape(24.dp)).background(ring).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
+        Modifier.size(d.railButton).clip(RoundedCornerShape(24.dp)).background(ring).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Image(app.icon.asImageBitmap(), app.label, Modifier.size(48.dp).clip(CircleShape))
+        Image(app.icon.asImageBitmap(), app.label, Modifier.size(d.railButton * 0.63f).clip(CircleShape))
     }
 }
 
@@ -296,10 +296,10 @@ private fun MicButton(listening: Boolean, onClick: () -> Unit) {
     val bg = if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
     val fg = if (listening) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
     Box(
-        Modifier.size(d.touchTarget).clip(CircleShape).background(bg).carFocusHighlight(CircleShape).clickable(onClick = onClick),
+        Modifier.size(d.railButton).clip(CircleShape).background(bg).carFocusHighlight(CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Rounded.Mic, contentDescription = stringResource(R.string.assistant_mic_label), tint = fg, modifier = Modifier.size(d.iconSize))
+        Icon(Icons.Rounded.Mic, contentDescription = stringResource(R.string.assistant_mic_label), tint = fg, modifier = Modifier.size(d.railIcon))
     }
 }
 

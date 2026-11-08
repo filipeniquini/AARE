@@ -213,7 +213,9 @@ class CarSession(
                     ch.touchScreen?.let { touchSize = it.width to it.height }
                     channels += ch
                 }
-                s.hasSensorSourceService() -> channels += SensorChannel(s, sensorListener)
+                s.hasSensorSourceService() -> channels += SensorChannel(s, sensorListener).also {
+                    DiagLog.add("car sensors: " + it.available.joinToString { t -> t.name.removePrefix("SENSOR_").lowercase() })
+                }
                 s.hasNavigationStatusService() -> navStatus = NavigationStatusChannel(s).also { channels += it }
                 s.hasMediaPlaybackService() -> playback = MediaPlaybackChannel(s).also { channels += it }
                 s.hasPhoneStatusService() -> phoneStatus = net.prototux.aare.aap.channels.PhoneStatusChannel(s) { phoneBridge?.onInput(it) }.also { channels += it }
@@ -523,6 +525,9 @@ class CarSession(
     /** The car's GPS as the phone's location, so apps don't mix two positions. */
     private val locationFeed = PhoneLocationFeed(context)
 
+    /** The car's last day/night signal, to log only its changes. */
+    @Volatile private var lastNightLogged: Boolean? = null
+
     private val sensorListener = object : SensorChannel.Listener {
         override fun onSensors(batch: SensorBatch) {
             CarData.update(batch) // every sensor, for car apps and the assistant
@@ -543,6 +548,7 @@ class CarSession(
             batch.compassDataList.lastOrNull()?.let { runtime.carHeading = it.bearingE6 / 1e6f; carSensors = true }
             if (carSensors) runtime.carSensorsChanged()
             batch.nightModeDataList.lastOrNull()?.let { n ->
+                if (n.nightMode != lastNightLogged) { lastNightLogged = n.nightMode; DiagLog.add("car night mode: ${if (n.nightMode) "night" else "day"}") }
                 main.post { runtime.carNightMode(n.nightMode) }
             }
             batch.drivingStatusDataList.lastOrNull()?.let { d ->

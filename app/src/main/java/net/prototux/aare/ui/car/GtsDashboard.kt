@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -85,16 +86,19 @@ internal fun GtsDashboard(
         val mediaHeight = minOf(maxWidth * 9f / 16f, (maxHeight - gutter) * MEDIA_SHARE_MAX)
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter)) {
             // Grey, like the car's own VW Play screens, with its insides in matching greys.
-            Card(Modifier.weight(1f).fillMaxWidth(), background = Brush.verticalGradient(listOf(CAR_CARD_TOP, CAR_CARD_BOTTOM))) {
-                val c = MaterialTheme.colorScheme
+            val c = MaterialTheme.colorScheme
+            val night = net.prototux.aare.ui.theme.LocalCarNight.current
+            // One flat color (the gradient looked heavy), the readings' boxes a step darker; at night
+            // the boxes are pure black and the card just above it.
+            Card(Modifier.weight(1f).fillMaxWidth(), background = SolidColor(if (night) CAR_CARD_NIGHT else CAR_CARD)) {
                 MaterialTheme(colorScheme = c.copy(
-                    surfaceContainerHigh = Color(0x33000000),
-                    surfaceContainerHighest = Color(0x40000000),
-                    onSurface = Color.White,
-                    onSurfaceVariant = Color(0xFFC9CCD1),
+                    surfaceContainerHigh = if (night) Color.Black else Color(0x33000000),
+                    surfaceContainerHighest = if (night) Color(0xFF26272B) else Color(0x40000000),
+                    onSurface = if (night) Color(0xFFE6E7EA) else Color.White,
+                    onSurfaceVariant = if (night) Color(0xFF9A9FA8) else Color(0xFFC9CCD1),
                 )) { GtsCarCard(state, Modifier.fillMaxSize()) }
             }
-                        GtsMediaCard(state, actions, Modifier.fillMaxWidth().height(mediaHeight))
+            GtsMediaCard(state, actions, Modifier.fillMaxWidth().height(mediaHeight))
         }
         }
     }
@@ -112,9 +116,11 @@ val LocalMapCard = androidx.compose.runtime.compositionLocalOf<(@Composable (Mod
 /** The right column's width against the map card's 1: about 30 % of the screen, as in the user's sketch. */
 private const val GTS_SIDE_WEIGHT = 0.42f
 
-/** The car card's grey, lighter at the top. */
-private val CAR_CARD_TOP = Color(0xFF4A4D53)
-private val CAR_CARD_BOTTOM = Color(0xFF33363B)
+/** The car card's grey, like the VW Play's own screens. */
+private val CAR_CARD = Color(0xFF3F4247)
+
+/** At night: a grey so dark it's nearly black, just enough to tell from the black boxes and screen. */
+private val CAR_CARD_NIGHT = Color(0xFF141518)
 
 /** Top of the scale on the rev bar, in thousands, and where its red zone starts. */
 private const val REV_MAX = 7
@@ -140,6 +146,11 @@ private fun scale(u: Float) = Scale(u, LocalDensity.current.fontScale)
 private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
     val obd by ObdReader.readings.collectAsState()
     val obdStatus by ObdReader.status.collectAsState()
+    // The theme's line heights are for its own type sizes (32 sp lines for 24 sp text): on this
+    // card's smaller text they added rows of empty space and pushed the bottom row out.
+    // (copy, not ProvideTextStyle: merging an unspecified line height keeps the old one)
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides
+        androidx.compose.material3.LocalTextStyle.current.copy(lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified)) {
     BoxWithConstraints(modifier) {
         val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
         Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f)), verticalArrangement = Arrangement.SpaceBetween) {
@@ -167,6 +178,7 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
             }
             ReadingsGrid(obd, s)
         }
+    }
     }
 }
 

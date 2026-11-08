@@ -160,7 +160,10 @@ internal class MediaConnection(
             // SecurityException: the app rejected us (caller validation); not worth retrying alone
             Log.w(TAG, "connect ${app.packageName} failed: $e")
             MediaController.releaseFuture(future)
-            if (e is SecurityException) _status.value = Status.Failed(MediaError("${app.label} did not accept the connection"), refused = true)
+            if (e is SecurityException) {
+                _status.value = Status.Failed(MediaError("${app.label} did not accept the connection"), refused = true)
+                net.prototux.aare.host.NativeCompat.refusedNow(context, app.packageName, app.label, "media browser refused")
+            }
             else fail("Could not connect to ${app.label}")
             return
         }
@@ -189,6 +192,7 @@ internal class MediaConnection(
                     .build()
                 reconnects = 0
                 _status.value = Status.Ready(root, hintsOf(extras), extras?.getBoolean(MediaKeys.SEARCH_SUPPORTED, false) == true)
+                net.prototux.aare.host.NativeCompat.worked(context, app.packageName, app.label)
                 return
             }
             // no framework connection: media3's root. Without params it sends no
@@ -219,6 +223,7 @@ internal class MediaConnection(
         val search = if (library) b.isSessionCommandAvailable(SessionCommand.COMMAND_CODE_LIBRARY_SEARCH)
         else extras.getBoolean(MediaKeys.SEARCH_SUPPORTED, false)
         _status.value = Status.Ready(root, hintsOf(extras), search)
+        net.prototux.aare.host.NativeCompat.worked(context, app.packageName, app.label)
     }
 
     /** Connects [legacyBrowser] with Android Auto's [rootHints]; null when the app refuses or hangs. */

@@ -15,15 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AcUnit
-import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Event
 import androidx.compose.material.icons.rounded.Navigation
-import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Thunderstorm
-import androidx.compose.material.icons.rounded.Umbrella
-import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,14 +38,6 @@ import net.prototux.aare.R
 import net.prototux.aare.car.NextEvent
 import net.prototux.aare.car.Weather
 
-/** WMO weather codes (Open-Meteo) to an icon. */
-internal fun weatherIcon(w: Weather): ImageVector = when (w.code) {
-    0, 1 -> if (w.day) Icons.Rounded.WbSunny else Icons.Rounded.NightsStay
-    in 51..67, in 80..82 -> Icons.Rounded.Umbrella
-    in 71..77, 85, 86 -> Icons.Rounded.AcUnit
-    in 95..99 -> Icons.Rounded.Thunderstorm
-    else -> Icons.Rounded.Cloud
-}
 
 /** The temperature and sky, next to the clock like Android Auto's. */
 @Composable

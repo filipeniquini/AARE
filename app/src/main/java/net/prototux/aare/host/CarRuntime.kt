@@ -29,8 +29,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import net.prototux.aare.R
+import net.prototux.aare.DiagLog
 import net.prototux.aare.Settings
 import net.prototux.aare.car.Calls
 import net.prototux.aare.car.DashboardInfo
@@ -253,10 +255,13 @@ class CarRuntime(
     /** Applies the theme and bar position settings (also when they change during a drive). */
     private fun applyScreenSettings() {
         val gts = settings.carStyle == Settings.STYLE_GTS
-        val night = if (gts) true else when (settings.carTheme) {
+        // The GTS style follows the same setting (it was always dark until 2026-11-08).
+        val night = when (settings.carTheme) {
             Settings.THEME_DARK -> true
             Settings.THEME_LIGHT -> false
-            else -> carNight ?: true
+            // The car's own signal; without one, whether the sun is up where the car is (from
+            // the weather), else dark.
+            else -> carNight ?: ui.weather?.let { !it.day } ?: true
         }
         if (ui.night != night) {
             ui.night = night
@@ -314,6 +319,8 @@ class CarRuntime(
             addDataScheme("package")
         })
         scope.launch { media.apps.collectLatest { refreshApps() } }
+        scope.launch { NativeCompat.changes.collectLatest { refreshApps() } }
+        if (primary) scope.launch { probeNativeApps() }
         scope.launch { watchCalls() }
         scope.launch { watchDashboardInfo() }
         scope.launch {
@@ -327,10 +334,10 @@ class CarRuntime(
         scope.launch {
             media.playback.collectLatest { p ->
                 ui.nowPlaying = p?.let {
-                    NowPlaying(mediaId(it.packageName), it.title, listOf(it.artist, it.album).filter { s -> s.isNotBlank() }.joinToString(" · "),
+                    NowPlaying(mediaEntryId(it.packageName), it.title, listOf(it.artist, it.album).filter { s -> s.isNotBlank() }.joinToString(" · "),
                         it.art, it.playing, it.positionMs, it.durationMs, it.sampledAtMs)
                 }
-                if (p != null && ui.activeMediaAppId == null) ui.activeMediaAppId = mediaId(p.packageName)
+                if (p != null && ui.activeMediaAppId == null) ui.activeMediaAppId = mediaEntryId(p.packageName)
             }
         }
     }
@@ -353,30 +360,84 @@ class CarRuntime(
             val (found, messaging) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 CarAppCatalog.query(context) to AndroidAutoApps.messagingApps(context)
             }
-            // Only the phone apps the user picked for the car (Apps page on the phone).
-            val chosen = settings.phoneAppsShown
+            // The phone apps the user picked for the car (Apps page on the phone), and the apps
+            // whose car side refused AARE: those open mirrored instead (NativeCompat).
+            val refused = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                (found.map { it.packageName } + media.apps.value.map { it.packageName })
+                    .filterTo(HashSet()) { NativeCompat.refused(context, it) }
+            }
+            // Google's car assistant only binds to Android Auto: Gemini, mirrored, takes its place.
+            val gemini = if (assistantPackage()?.let { NativeCompat.refused(context, it) } == true &&
+                context.packageManager.getLaunchIntentForPackage(PhoneApps.GEMINI) != null) setOf(PhoneApps.GEMINI) else emptySet()
+            // Video apps (YouTube...) too: their Android Auto side is sound only, the picture is the point.
+            val video = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                media.apps.value.map { it.packageName }.filterTo(HashSet()) { pkg ->
+                    val category = runCatching { context.packageManager.getApplicationInfo(pkg, 0).category }.getOrDefault(-1)
+                    PhoneApps.kind(pkg, category) == PhoneApps.Kind.VIDEO
+                }
+            }
+            val chosen = settings.phoneAppsShown + refused + gemini + video
             val all = if (settings.phoneApps && chosen.isNotEmpty() && PhoneApps.available())
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     runCatching { PhoneApps.query(context, PHONE_APP_ICON_PX) }.getOrDefault(emptyList()).filter { it.component.packageName in chosen }
                 }
             else emptyList()
-            applyApps(found, messaging, all)
+            applyApps(found, messaging, all, refused)
+        }
+    }
+
+    /**
+     * Tries, once per app version, whether each app with an Android Auto side opens natively here:
+     * a Car App Library app is bound and created, a media app's browser connected, then both let
+     * go. Refusals make the app open mirrored (see [NativeCompat]); nothing is shown meanwhile.
+     */
+    private suspend fun probeNativeApps() {
+        kotlinx.coroutines.delay(PROBE_DELAY_MS) // after the car session has settled
+        val carApps = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { CarAppCatalog.query(context) }
+        val assistantPkg = assistantPackage()
+        for (info in carApps) {
+            if (info.packageName == assistantPkg || NativeCompat.known(context, info.packageName)) continue
+            if (connections.values.any { it.info.packageName == info.packageName }) continue
+            val probe = CarAppConnection(context, info, this, probe = true)
+            probe.connect()
+            kotlinx.coroutines.withTimeoutOrNull(PROBE_TIMEOUT_MS) {
+                androidx.compose.runtime.snapshotFlow { probe.status }.first { it == CarAppConnection.Status.READY || it == CarAppConnection.Status.FAILED }
+            }
+            DiagLog.add("probe ${info.label}: ${probe.status}${probe.error?.let { " ($it)" } ?: ""}")
+            probe.release()
+        }
+        val art = net.prototux.aare.media.ArtLoader(context)
+        for (app in media.apps.value) {
+            if (NativeCompat.known(context, app.packageName)) continue
+            val probe = net.prototux.aare.media.MediaConnection(context, scope, app, art)
+            probe.connect()
+            val status = kotlinx.coroutines.withTimeoutOrNull(PROBE_TIMEOUT_MS) {
+                probe.status.first { it !is net.prototux.aare.media.MediaConnection.Status.Connecting }
+            }
+            DiagLog.add("probe ${app.label} (media): ${status?.javaClass?.simpleName ?: "no answer"}")
+            probe.release()
         }
     }
 
     /** Phone apps shown on the virtual display, by entry id. */
     private val phoneApps = HashMap<String, PhoneApps.App>()
 
-    private fun applyApps(found: List<CarAppInfo>, messaging: List<PhoneApp>, all: List<PhoneApps.App> = emptyList()) {
+    private fun applyApps(found: List<CarAppInfo>, messaging: List<PhoneApp>, all: List<PhoneApps.App> = emptyList(), refused: Set<String> = emptySet()) {
         val hidden = settings.hiddenApps
         val assistantPkg = assistantPackage()
+        // A native side that refused AARE gives way to the mirrored app, when there is one to show
+        // (the assistant keeps its role; a messaging app falls back to AARE's own messages screen).
+        val mirrorable = all.mapTo(HashSet()) { it.component.packageName }
+        fun mirrored(pkg: String) = pkg in refused &&
+            // the refused assistant's broken entries go: the mic button opens Gemini instead
+            (pkg == assistantPkg && PhoneApps.GEMINI in mirrorable || pkg in mirrorable || messaging.any { it.packageName == pkg })
         carApps.clear()
         val entries = ArrayList<CarAppEntry>()
         val mediaPackages = media.apps.value.mapTo(HashSet()) { it.packageName }
         for (app in found) {
             val id = carId(app)
             carApps[id] = app
-            if (app.packageName in hidden) continue
+            if (app.packageName in hidden || mirrored(app.packageName)) continue
             // Music apps' car UIs tend to accept only Google's host; their media service works here.
             if (!app.isNavigation && app.packageName != assistantPkg && app.packageName in mediaPackages) continue
             val kind = when {
@@ -388,7 +449,7 @@ class CarRuntime(
         }
         for (m in media.apps.value) {
             // A navigation app or the assistant with a car UI of its own is shown once, as that.
-            if (m.packageName in hidden || entries.any { it.packageName == m.packageName }) continue
+            if (m.packageName in hidden || mirrored(m.packageName) || entries.any { it.packageName == m.packageName }) continue
             entries += CarAppEntry(mediaId(m.packageName), m.packageName, m.label, m.icon, CarAppKind.MEDIA)
         }
         // Built in, like Android Auto's: calls and the car-side settings.
@@ -425,15 +486,34 @@ class CarRuntime(
         entries.sortWith(compareBy<CarAppEntry>({ order[orderKey(it)] ?: Int.MAX_VALUE }, { it.label.lowercase() }))
         ui.apps.clear()
         ui.apps.addAll(entries)
+        // The app on screen changed side (it refused AARE just now): show it the new way.
+        (ui.screen as? CarScreen.App)?.let { on ->
+            if (entries.none { it.id == on.appId }) {
+                val pkg = on.appId.substringAfter(':').substringBefore('/')
+                val same = entries.firstOrNull { it.packageName == pkg && it.kind == CarAppKind.PHONE_APP }
+                    ?: entries.firstOrNull { it.packageName == pkg }
+                ui.screen = if (same != null) CarScreen.App(same.id) else CarScreen.Dashboard
+            }
+        }
+        ui.activeMediaAppId?.let { id -> if (entries.none { it.id == id }) ui.activeMediaAppId = null }
+        ui.activeNavAppId?.let { id -> if (entries.none { it.id == id }) ui.activeNavAppId = null }
         // Restore the last navigation and media apps, so the dashboard isn't empty.
         if (ui.activeNavAppId == null) {
             val nav = entries.filter { it.kind == CarAppKind.NAVIGATION }
             ui.activeNavAppId = (nav.firstOrNull { it.packageName == settings.lastNavApp } ?: nav.singleOrNull())?.id
         }
         if (ui.activeMediaAppId == null) {
-            ui.activeMediaAppId = entries.firstOrNull { it.kind == CarAppKind.MEDIA && it.packageName == settings.lastMediaApp }?.id
+            ui.activeMediaAppId = settings.lastMediaApp?.let { last ->
+                (entries.firstOrNull { it.kind == CarAppKind.MEDIA && it.packageName == last }
+                    ?: entries.firstOrNull { it.kind == CarAppKind.PHONE_APP && it.packageName == last })?.id
+            }
         }
     }
+
+    /** The car entry for a media app's package: its native media screen, or the mirrored app when it refused AARE. */
+    private fun mediaEntryId(pkg: String): String =
+        (ui.apps.firstOrNull { it.kind == CarAppKind.MEDIA && it.packageName == pkg }
+            ?: ui.apps.firstOrNull { it.kind == CarAppKind.PHONE_APP && it.packageName == pkg })?.id ?: mediaId(pkg)
 
     /** The weather (every 30 minutes) and the next calendar event (every 5), for the rail and the dashboard. */
     private suspend fun watchDashboardInfo() {
@@ -444,7 +524,7 @@ class CarRuntime(
             else if (now - lastWeather > 30 * 60_000) {
                 val where = carLocation ?: DashboardInfo.phoneLocation(context)
                 if (where != null) {
-                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DashboardInfo.weather(where) }?.let { ui.weather = it; lastWeather = now }
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DashboardInfo.weather(where) }?.let { ui.weather = it; lastWeather = now; applyScreenSettings() }
                 }
             }
             ui.nextEvent = if (settings.showCalendar)
@@ -566,6 +646,7 @@ class CarRuntime(
 
     val actions = object : CarActions {
         override fun openApp(app: CarAppEntry) {
+            DiagLog.add("open ${app.label} (${app.kind.name.lowercase()})")
             when (app.kind) {
                 CarAppKind.MEDIA -> {
                     ui.activeMediaAppId = app.id
@@ -576,6 +657,13 @@ class CarRuntime(
                     ui.activeNavAppId = app.id
                     settings.lastNavApp = app.packageName
                     connection(app.id)?.connect()
+                }
+                CarAppKind.PHONE_APP -> {
+                    // A music app opened mirrored (it refused AARE's media screen) is still the media app.
+                    if (phoneApps[app.id]?.let { PhoneApps.kind(app.packageName, it.category) } == PhoneApps.Kind.MUSIC) {
+                        ui.activeMediaAppId = app.id
+                        settings.lastMediaApp = app.packageName
+                    }
                 }
                 else -> connection(app.id)?.connect()
             }
@@ -617,6 +705,7 @@ class CarRuntime(
         }
         val entry = ui.apps.firstOrNull { it.packageName == pkg && it.kind != CarAppKind.MEDIA && it.kind != CarAppKind.NAVIGATION }
         val conn = entry?.let { connection(it.id) }
+        if (NativeCompat.refused(context, pkg) && openGemini()) return
         if (entry != null && conn != null) {
             // Like Android Auto's assistant: a bar over whatever is on screen, not the app full screen.
             conn.connect(Intent(Intent.ACTION_VOICE_COMMAND).setComponent(conn.info.service))
@@ -632,6 +721,30 @@ class CarRuntime(
     }
 
     /** The phone app for the GTS big card, if it's set, installed and Shizuku can show it; else null. */
+    /**
+     * Gemini mirrored, for an assistant that refuses AARE: on the GTS home screen it opens over the
+     * map in the big card (the same display), and the button again brings the map back; elsewhere
+     * it opens full screen. Gemini starts on its own screen: the driver taps its microphone (it
+     * has no way to be started listening from outside). False when it can't be shown.
+     */
+    private fun openGemini(): Boolean {
+        val gemini = context.packageManager.getLaunchIntentForPackage(PhoneApps.GEMINI)?.component ?: return false
+        if (!settings.phoneApps || !PhoneApps.available()) return false
+        val map = mapCardComponent()
+        if (map != null && ui.screen == CarScreen.Dashboard) {
+            scope.launch {
+                val top = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PhoneApps.card.topPackage() }
+                val back = top in PhoneApps.ASSISTANT_PACKAGES
+                DiagLog.add("assistant: Gemini ${if (back) "closed, map back" else "opened"} in the map card (top was $top)")
+                if (back) PhoneApps.card.open(map) else PhoneApps.card.open(gemini)
+            }
+            return true
+        }
+        val entry = ui.apps.firstOrNull { it.packageName == PhoneApps.GEMINI && it.kind == CarAppKind.PHONE_APP } ?: return false
+        actions.openApp(entry)
+        return true
+    }
+
     private fun mapCardComponent(): android.content.ComponentName? {
         if (!ui.gtsStyle || !settings.phoneApps || !PhoneApps.available()) return null
         val pkg = settings.mapCardApp.ifBlank { return null }
@@ -667,7 +780,7 @@ class CarRuntime(
             val mapCard: (@Composable (Modifier) -> Unit)? = cardApp?.let { component ->
                 { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card) }
             }
-            CompositionLocalProvider(LocalCarDimens provides LocalCarDimens.current, net.prototux.aare.ui.car.LocalMapCard provides mapCard) {
+            CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else LocalCarDimens.current, net.prototux.aare.ui.car.LocalMapCard provides mapCard) {
                 CarShell(
                     state = ui,
                     actions = actions,
@@ -708,6 +821,8 @@ class CarRuntime(
 
     companion object {
         private const val TAG = "AareRuntime"
+        private const val PROBE_DELAY_MS = 8_000L
+        private const val PROBE_TIMEOUT_MS = 12_000L
         fun carId(app: CarAppInfo) = "car:${app.service.flattenToShortString()}"
         fun mediaId(pkg: String) = "media:$pkg"
         fun messagingId(pkg: String) = "messages:$pkg"
