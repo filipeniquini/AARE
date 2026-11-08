@@ -250,6 +250,7 @@ class CarSession(
 
     override fun onRunning(session: AapSession) {
         linkBluetooth()
+        net.prototux.aare.PerfLog.start(context, headUnitName) { perfFigures() }
         main.post {
             listener.onStatus(this, context.getString(R.string.notif_status_projecting_to, headUnitName))
             navStatus?.let { navBridge = NavStatusBridge(it, { m, w, h -> turnImage(m, w, h) }, ::png) }
@@ -380,6 +381,43 @@ class CarSession(
     }
 
     /** What a black car screen needs explained: kept in the connection log, which survives the drive home. */
+    /** This session's figures for the performance log (perf thread: reads only). */
+    private fun perfFigures(): Map<String, Any?> = LinkedHashMap<String, Any?>().apply {
+        val ui = runtime.ui
+        put("screen", when (val s = ui.screen) {
+            is net.prototux.aare.ui.car.CarScreen.App -> s.appId.substringAfter(':').substringBefore('/')
+            else -> s.javaClass.simpleName.lowercase()
+        })
+        put("driving", ui.drivingRestricted)
+        put("night", ui.night)
+        put("rtt_ms", aap.lastRttMs)
+        video?.let { ch ->
+            put("video_frames_total", framesEncoded)
+            put("video_acks_total", ch.acksReceived)
+            put("video_dropped_total", ch.droppedFrames)
+            put("video_congestion_total", ch.congestionDrops)
+            put("video_pending", ch.pendingFrames)
+            put("video_ack_ms", ch.ackLatencyMs)
+            put("video_send_ms", ch.sendLatencyMs)
+            put("video_kbps", encoder?.currentBitrate?.let { it / 1000 })
+            put("video_focused", ch.focused)
+            put("video_stalls_total", ch.stalls)
+            put("video_restarts_total", ch.restarts)
+        }
+        for ((type, out) in audioOuts.entries.sortedBy { it.key.name }) {
+            val p = type.name.removePrefix("AUDIO_STREAM_").lowercase()
+            put("${p}_playing", out.isPlaying)
+            put("${p}_sent_total", out.chunksSent)
+            put("${p}_dropped_total", out.chunksDropped)
+            put("${p}_read_max_ms", out.takeSlowestReadMs())
+        }
+        val obd = net.prototux.aare.obd.ObdReader
+        put("obd", obd.status.value.state.name.lowercase())
+        // Always these columns (empty without readings), so the header doesn't change with the adapter.
+        val r = obd.readings.value
+        put("speed", r?.speed?.toInt()); put("rpm", r?.rpm?.toInt()); put("coolant", r?.coolant?.toInt())
+    }
+
     private val videoReport = object : Runnable {
         var left = VIDEO_REPORTS
         override fun run() {
@@ -763,6 +801,7 @@ class CarSession(
     // ------------------------------------------------------------------ teardown
 
     private fun teardown() {
+        net.prototux.aare.PerfLog.stop()
         pauseMusicOnLeave()
         net.prototux.aare.obd.ObdReader.stop(context)
         if (settings.accessibilityInCarOnly) net.prototux.aare.mirror.AccessibilitySwitch.carGone(context)

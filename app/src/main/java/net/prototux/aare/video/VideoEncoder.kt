@@ -117,7 +117,12 @@ class VideoEncoder(
     }
 
     /** Changes the target bitrate of the running stream (adaptive bitrate, see [BitrateController]). */
+    /** The bitrate asked of the encoder now (performance log). */
+    @Volatile var currentBitrate: Int = bitrate
+        private set
+
     fun setBitrate(bps: Int) {
+        currentBitrate = bps
         runCatching { codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps) }) }
             .onFailure { Log.w(TAG, "can't change the bitrate to $bps: ${it.message}") }
     }

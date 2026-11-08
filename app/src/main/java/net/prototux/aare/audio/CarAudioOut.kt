@@ -32,6 +32,17 @@ class CarAudioOut(
         val granted: Boolean
     }
 
+    // Performance log: totals since start, and the longest wait for one chunk of capture since the last look.
+    @Volatile var chunksSent = 0L
+        private set
+    @Volatile var chunksDropped = 0L
+        private set
+    @Volatile private var slowestReadMs = 0L
+    /** Whether sound is going to the car now. */
+    val isPlaying: Boolean get() = playing
+    /** The longest wait for a whole chunk from the capture since the last call (gaps in the phone's sound). */
+    fun takeSlowestReadMs(): Long = slowestReadMs.also { slowestReadMs = 0 }
+
     @Volatile private var running = false
     private var thread: Thread? = null
     private val baseBacklog = if (channel.streamType == AudioStreamType.AUDIO_STREAM_GUIDANCE) MAX_QUEUED else LIVE_BACKLOG
@@ -104,6 +115,7 @@ class CarAudioOut(
         try {
             while (running) {
                 var got = 0
+                val readStart = SystemClock.elapsedRealtime()
                 while (got < chunk && running) {
                     val n = source.read(buf, 10 + got, chunk - got)
                     if (n < 0) { running = false; break }
@@ -112,6 +124,7 @@ class CarAudioOut(
                 }
                 if (got < chunk) continue
                 val now = SystemClock.elapsedRealtime()
+                if (now - readStart > slowestReadMs) slowestReadMs = now - readStart
                 if (!isSilent(buf, 10, chunk)) lastSound = now
                 // On the same clock as the video (the encoder stamps System.nanoTime), as Android Auto
                 // does: a stream starting at 0 µs next to video at ~10^12 µs is a suspect for the
@@ -153,20 +166,21 @@ class CarAudioOut(
                     // sends one chunk per chunk of time. Late or no room: drop, stay live.
                     queued.clear()
                     pace()
-                    if (channel.hasRoom) channel.sendPcm(buf.copyOf(), 10, chunk, ts) else noRoom++
+                    if (channel.hasRoom) { channel.sendPcm(buf.copyOf(), 10, chunk, ts); chunksSent++ } else { noRoom++; chunksDropped++ }
                     continue
                 }
                 if (queued.isEmpty() && channel.hasRoom) {
                     // A copy: the writer thread sends the array later, and buf is refilled meanwhile.
                     channel.sendPcm(buf.copyOf(), 10, chunk, ts)
+                    chunksSent++
                     continue
                 }
                 // Catching up: send the backlog in order, as fast as the car's ack window allows.
                 queue(ts)
-                while (queued.isNotEmpty() && channel.hasRoom) queued.removeFirst().let { (b, t) -> channel.sendPcm(b, 10, chunk, t) }
+                while (queued.isNotEmpty() && channel.hasRoom) queued.removeFirst().let { (b, t) -> channel.sendPcm(b, 10, chunk, t); chunksSent++ }
                 // The car stays behind (or never acks): stay close to real time. The oldest goes
                 // through sendPcm so dropped chunks still count towards ack-less detection.
-                while (queued.size > maxBacklog) queued.removeFirst().let { (b, t) -> channel.sendPcm(b, 10, chunk, t) }
+                while (queued.size > maxBacklog) queued.removeFirst().let { (b, t) -> channel.sendPcm(b, 10, chunk, t); chunksDropped++ }
             }
         } catch (e: Exception) {
             Log.w(TAG, "audio capture stopped", e)
