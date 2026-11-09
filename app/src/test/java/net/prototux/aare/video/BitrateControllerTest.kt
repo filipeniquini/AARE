@@ -90,6 +90,20 @@ class BitrateControllerTest {
     }
 
     @Test
+    fun aHotPhoneLowersTheCeilingAndCoolingLiftsIt() {
+        val applied = mutableListOf<Int>()
+        val c = BitrateController(start) { applied += it }
+        c.ceilingFactor = 0.5
+        c.onFrame(0, active = true, pending = 0, congestionDrops = 0, ackLatencyMs = 10, sendLatencyMs = 1)
+        assertEquals(start / 2, c.bitrate)
+        assertEquals(listOf(start / 2), applied)
+        c.ceilingFactor = 1.0
+        var t = 0L
+        repeat(2_000) { t += 33; c.onFrame(t, active = true, pending = 0, congestionDrops = 0, ackLatencyMs = 10, sendLatencyMs = 1) }
+        assertEquals("climbs back once cool", start, c.bitrate)
+    }
+
+    @Test
     fun controllerAppliesChangesAndPausesWhenHidden() {
         val applied = mutableListOf<Int>()
         val c = BitrateController(start) { applied += it }

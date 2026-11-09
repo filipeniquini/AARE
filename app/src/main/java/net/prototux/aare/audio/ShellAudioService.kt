@@ -122,6 +122,13 @@ class ShellAudioService : IShellAudio.Stub {
         false
     }
 
+    override fun killBackgroundApp(packageName: String): Boolean = runCatching {
+        // A package name only, one argument (no shell), and never AARE or the system.
+        require(Regex("[A-Za-z][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+").matches(packageName)) { "not a package name" }
+        require(packageName != AARE_PACKAGE && packageName != "android") { "not that one" }
+        run("am", "kill", packageName) != null
+    }.getOrDefault(false)
+
     override fun bluetoothAddress(): String? = runCatching {
         run("settings", "get", "secure", "bluetooth_address")?.trim()?.takeIf { Regex("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}").matches(it) }
     }.getOrNull()

@@ -62,6 +62,13 @@ class BitrateController(
         private set
     val bitrate: Int get() = state.bitrate
 
+    /**
+     * Share of [startBitrate] allowed now (1 = all): lowered while the phone runs hot, so the
+     * encoder and the link work less until it cools down. Applied at the next frame.
+     */
+    @Volatile var ceilingFactor: Double = 1.0
+    private val ceiling: Int get() = maxOf(floor, (startBitrate * ceilingFactor).toInt())
+
     private var windowStart = -1L
     private var lastFrame = -1L
     private var frames = 0
@@ -91,6 +98,13 @@ class BitrateController(
             dropsAtStart = congestionDrops
         }
         lastFrame = nowMs
+        // Above the (thermal) ceiling: down to it at once; the decisions below stay under it.
+        val top = ceiling
+        if (state.bitrate > top) {
+            Log.i(TAG, "video bitrate ${state.bitrate / 1000} -> ${top / 1000} kb/s (phone hot)")
+            state = State(top)
+            apply(top)
+        }
         frames++
         pendingSum += pending
         ackSum += ackLatencyMs
@@ -103,7 +117,7 @@ class BitrateController(
         val meanSend = sendSum.toDouble() / frames
         val tick = Tick(elapsed, congested(meanPending, meanAck, meanSend, params), congestionDrops > dropsAtStart)
         windowStart = -1
-        val next = decide(state, tick, startBitrate, floor, params)
+        val next = decide(state, tick, top, floor, params)
         if (next.bitrate != state.bitrate) {
             val why = if (next.bitrate < state.bitrate) {
                 "congested: %.1f frames waiting, ack %.0f ms, send %.0f ms%s".format(meanPending, meanAck, meanSend,

@@ -25,6 +25,12 @@ interface IShellAudio {
     /** The phone's own Bluetooth address (apps only get a placeholder), or null. */
     String bluetoothAddress() = 5;
 
+    /**
+     * Ends an app's process if it is in the background (am kill: no force stop, the app keeps
+     * its notifications and alarms). For the car apps AARE hosted. Returns whether am succeeded.
+     */
+    boolean killBackgroundApp(String packageName) = 6;
+
     /** Shizuku's user-service teardown call. */
     void destroy() = 16777114;
 }

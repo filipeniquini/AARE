@@ -347,12 +347,36 @@ class CarRuntime(
         running.remove(this)
         runCatching { context.unregisterReceiver(packageReceiver) }
         settings.unregisterListener(settingsListener)
+        val usedNatively = (connections.values + clusterConnections.values)
+            .filter { it.status == CarAppConnection.Status.READY }.mapTo(HashSet()) { it.info.packageName }
         connections.values.forEach { it.release() }
         connections.clear()
         clusterConnections.values.forEach { it.release() }
         clusterConnections.clear()
         if (running.isEmpty()) PhoneApps.release()
         if (ownsMedia) media.release()
+        if (primary) closeLeftovers(usedNatively)
+    }
+
+    /**
+     * The Car App Library leaves a virtual display ("CarAppService") inside every app it ran for
+     * us, until that app's process ends: hidden screens like that were a suspect when the user's
+     * bank refused to open (2026-11-08). Once the car is gone, end those apps' processes if they
+     * are in the background, as Android would to free memory (not a force stop: they keep their
+     * notifications and alarms). An app the driver has open on the phone is left alone.
+     */
+    private fun closeLeftovers(packages: Set<String>) {
+        if (packages.isEmpty()) return
+        // Through Shizuku's am kill: since Android 14 an app may only end its own processes. Twice:
+        // just after the unbind Android still counts the app as serving us and won't end it
+        // (CoMaps, 2026-11-08); a few seconds later it is a background app like any other.
+        for ((i, delay) in LEFTOVER_DELAYS_MS.withIndex()) main.postDelayed({
+            val app = context.applicationContext
+            Thread({
+                val done = net.prototux.aare.audio.ShellOnce.call(app) { shell -> packages.map { shell.killBackgroundApp(it) } }
+                if (i == LEFTOVER_DELAYS_MS.lastIndex) DiagLog.add("closed the car apps' leftovers: ${packages.joinToString()}${if (done == null) " (no Shizuku)" else ""}")
+            }, "aare-leftovers").start()
+        }, delay)
     }
 
     /** Rescans car apps (package manager work and icons on a background thread). */
@@ -377,7 +401,9 @@ class CarRuntime(
                     PhoneApps.kind(pkg, category) == PhoneApps.Kind.VIDEO
                 }
             }
-            val chosen = settings.phoneAppsShown + refused + gemini + video
+            // The phone's dialer isn't mirrored for refusing: AARE's own Phone screen does its job
+            // (two "Phone" icons otherwise). Still there if the user picked it on the Apps page.
+            val chosen = settings.phoneAppsShown + (refused - setOfNotNull(dialerPackage())) + gemini + video
             val all = if (settings.phoneApps && chosen.isNotEmpty() && PhoneApps.available())
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     runCatching { PhoneApps.query(context, PHONE_APP_ICON_PX) }.getOrDefault(emptyList()).filter { it.component.packageName in chosen }
@@ -420,6 +446,9 @@ class CarRuntime(
         }
     }
 
+    private fun dialerPackage(): String? =
+        runCatching { context.getSystemService(android.telecom.TelecomManager::class.java)?.defaultDialerPackage }.getOrNull()
+
     /** Phone apps shown on the virtual display, by entry id. */
     private val phoneApps = HashMap<String, PhoneApps.App>()
 
@@ -429,9 +458,10 @@ class CarRuntime(
         // A native side that refused AARE gives way to the mirrored app, when there is one to show
         // (the assistant keeps its role; a messaging app falls back to AARE's own messages screen).
         val mirrorable = all.mapTo(HashSet()) { it.component.packageName }
+        val dialer = dialerPackage()
         fun mirrored(pkg: String) = pkg in refused &&
             // the refused assistant's broken entries go: the mic button opens Gemini instead
-            (pkg == assistantPkg && PhoneApps.GEMINI in mirrorable || pkg in mirrorable || messaging.any { it.packageName == pkg })
+            (pkg == assistantPkg && PhoneApps.GEMINI in mirrorable || pkg == dialer || pkg in mirrorable || messaging.any { it.packageName == pkg })
         carApps.clear()
         val entries = ArrayList<CarAppEntry>()
         val mediaPackages = media.apps.value.mapTo(HashSet()) { it.packageName }
@@ -824,6 +854,8 @@ class CarRuntime(
     companion object {
         private const val TAG = "AareRuntime"
         private const val PROBE_DELAY_MS = 8_000L
+        /** After the car session's last unbind, so the apps have finished with it. */
+        private val LEFTOVER_DELAYS_MS = longArrayOf(5_000L, 20_000L)
         private const val PROBE_TIMEOUT_MS = 12_000L
         fun carId(app: CarAppInfo) = "car:${app.service.flattenToShortString()}"
         fun mediaId(pkg: String) = "media:$pkg"

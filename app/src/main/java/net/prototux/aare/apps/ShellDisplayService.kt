@@ -90,7 +90,11 @@ class ShellDisplayService : IShellDisplay.Stub {
         // The touch right after must find the display awake.
         val until = SystemClock.uptimeMillis() + 500
         while (interactive() == false && SystemClock.uptimeMillis() < until) SystemClock.sleep(10)
+        // The phone's own panel stays lit (its lock screen) until it times out: powering just the
+        // panel off (cmd display power-off, scrcpy's way) put Android back to sleep within 2 s on
+        // Android 17, and touches were dropped again (tested 2026-11-08).
     }
+
 
     private var power: Any? = null
 

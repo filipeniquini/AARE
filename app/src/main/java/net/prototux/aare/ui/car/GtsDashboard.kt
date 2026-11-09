@@ -155,7 +155,7 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
         androidx.compose.material3.LocalTextStyle.current.copy(lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified)) {
     BoxWithConstraints(modifier) {
         val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
-        Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f)), verticalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f))) {
             Column {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(obd?.speed?.let { "%.0f".format(it) } ?: "--", fontSize = s.sp(64f), lineHeight = s.sp(64f), fontWeight = FontWeight.Bold,
@@ -172,13 +172,16 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
                     for (i in 0..REV_MAX) Text("$i", fontSize = s.sp(13f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            Spacer(Modifier.height(s.dp(10f)))
             Column {
                 Text(today(), fontSize = s.sp(22f), color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(s.dp(6f)))
                 WeatherRow(state, s)
             }
-            ReadingsGrid(obd, s)
+            Spacer(Modifier.height(s.dp(12f)))
+            // The readings take whatever height is left (it sat empty between them and the weather).
+            ReadingsGrid(obd, s, Modifier.weight(1f).fillMaxWidth())
         }
     }
     }
@@ -265,34 +268,44 @@ private fun WeatherRow(state: CarUiState, s: Scale) {
     }
 }
 
-/** Water, boost, battery, fuel, range and consumption, three per row (from OBD2 in a later stage). */
+/** Water, boost, battery, fuel, range and consumption, three per row, with the dongle launcher's icons. */
 @Composable
-private fun ReadingsGrid(r: ObdReadings?, s: Scale) {
+private fun ReadingsGrid(r: ObdReadings?, s: Scale, modifier: Modifier) {
     fun f(v: Float?, pattern: String) = v?.let { pattern.format(it) } ?: "--"
     val readings = listOf(
-        stringResource(R.string.gts_water) to "${f(r?.coolant, "%.0f")} °C",
-        stringResource(R.string.gts_boost) to "${f(r?.boost, "%+.2f")} bar",
-        stringResource(R.string.gts_battery) to "${f(r?.battery, "%.1f")} V",
-        stringResource(R.string.gts_fuel) to "${f(r?.fuel, "%.0f")} %",
-        stringResource(R.string.gts_range) to "${f(r?.rangeKm, "%.0f")} km",
-        stringResource(R.string.gts_consumption) to "${f(r?.economy, "%.1f")} km/l",
+        Triple(ObdIcons.Coolant, stringResource(R.string.gts_water), f(r?.coolant, "%.0f") to "°C"),
+        Triple(ObdIcons.Boost, stringResource(R.string.gts_boost), f(r?.boost, "%+.2f") to "bar"),
+        Triple(ObdIcons.Battery, stringResource(R.string.gts_battery), f(r?.battery, "%.1f") to "V"),
+        Triple(ObdIcons.Fuel, stringResource(R.string.gts_fuel), f(r?.fuel, "%.0f") to "%"),
+        Triple(ObdIcons.Range, stringResource(R.string.gts_range), f(r?.rangeKm, "%.0f") to "km"),
+        Triple(ObdIcons.Economy, stringResource(R.string.gts_consumption), f(r?.economy, "%.1f") to "km/l"),
     )
-    Column(verticalArrangement = Arrangement.spacedBy(s.dp(8f))) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(s.dp(8f))) {
         readings.chunked(3).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(s.dp(8f))) {
-                row.forEach { (label, value) -> Reading(label, value, s, Modifier.weight(1f)) }
+            Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(s.dp(8f))) {
+                row.forEach { (icon, label, value) -> Reading(icon, label, value.first, value.second, s, Modifier.weight(1f).fillMaxHeight()) }
             }
         }
     }
 }
 
+/** One reading: the icon on top, the number big under it with its unit, sized to the block. */
 @Composable
-private fun Reading(label: String, value: String, s: Scale, modifier: Modifier) {
-    Column(modifier.clip(RoundedCornerShape(s.dp(12f))).background(MaterialTheme.colorScheme.surfaceContainerHigh)
-        .padding(horizontal = s.dp(10f), vertical = s.dp(6f))) {
-        Text(label.uppercase(), fontSize = s.sp(12f), letterSpacing = s.sp(0.8f), color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1, overflow = TextOverflow.Clip)
-        Text(value, fontSize = s.sp(22f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+private fun Reading(icon: ImageVector, label: String, value: String, unit: String, s: Scale, modifier: Modifier) {
+    BoxWithConstraints(modifier.clip(RoundedCornerShape(s.dp(12f))).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        // Grows with the block (the space the card has), within what its width allows ("+0.25 bar").
+        val k = minOf(maxHeight.value / 80f, maxWidth.value / 100f).coerceIn(0.7f, 1.8f)
+        val fontScale = LocalDensity.current.fontScale
+        fun sp(v: Float) = (v * k / fontScale).sp
+        Column(Modifier.fillMaxSize().padding(horizontal = (9 * k).dp, vertical = (7 * k).dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size((26 * k).dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(value, fontSize = sp(27f), lineHeight = sp(27f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                Spacer(Modifier.width((3 * k).dp))
+                Text(unit, fontSize = sp(12f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                    modifier = Modifier.padding(bottom = (3 * k).dp))
+            }
+        }
     }
 }
 

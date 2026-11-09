@@ -251,6 +251,7 @@ class CarSession(
     override fun onRunning(session: AapSession) {
         linkBluetooth()
         net.prototux.aare.PerfLog.start(context, headUnitName) { perfFigures() }
+        context.getSystemService(android.os.PowerManager::class.java)?.addThermalStatusListener(context.mainExecutor, thermalListener)
         main.post {
             listener.onStatus(this, context.getString(R.string.notif_status_projecting_to, headUnitName))
             navStatus?.let { navBridge = NavStatusBridge(it, { m, w, h -> turnImage(m, w, h) }, ::png) }
@@ -381,6 +382,29 @@ class CarSession(
     }
 
     /** What a black car screen needs explained: kept in the connection log, which survives the drive home. */
+    /** The running stream's adaptive bitrate, for the thermal ceiling. */
+    @Volatile private var bitrateControl: BitrateController? = null
+    @Volatile private var thermalStatus = android.os.PowerManager.THERMAL_STATUS_NONE
+
+    /**
+     * Less video work while the phone is hot: the bitrate ceiling drops to 70 % at "moderate"
+     * and 50 % from "severe" (Android's thermal status), and comes back once it cools. The
+     * 2026-11-08 drive reached "moderate" with YouTube at 40 °C battery.
+     */
+    private val thermalListener = android.os.PowerManager.OnThermalStatusChangedListener { status ->
+        val before = thermalStatus
+        thermalStatus = status
+        val factor = thermalCeiling(status)
+        bitrateControl?.ceilingFactor = factor
+        if (thermalCeiling(before) != factor) DiagLog.add("phone heat: status $status, video bitrate ceiling ${(factor * 100).toInt()} %")
+    }
+
+    private fun thermalCeiling(status: Int) = when {
+        status >= android.os.PowerManager.THERMAL_STATUS_SEVERE -> 0.5
+        status >= android.os.PowerManager.THERMAL_STATUS_MODERATE -> 0.7
+        else -> 1.0
+    }
+
     /** This session's figures for the performance log (perf thread: reads only). */
     private fun perfFigures(): Map<String, Any?> = LinkedHashMap<String, Any?>().apply {
         val ui = runtime.ui
@@ -455,6 +479,7 @@ class CarSession(
             private var frames = 0
             // Per stream: a restart (new config, encoder error) starts again from the full bitrate.
             private val abr = BitrateController(VideoEncoder.defaultBitrate(w, h, fps)) { encoder?.setBitrate(it) }
+                .also { it.ceilingFactor = thermalCeiling(thermalStatus); bitrateControl = it }
             override fun onCodecConfig(data: ByteArray, offset: Int, length: Int) {
                 DiagLog.add("video: codec config ${describeCodecConfig(data, offset, length)}")
                 ch.sendCodecConfig(data, offset, length)
@@ -804,6 +829,7 @@ class CarSession(
 
     private fun teardown() {
         net.prototux.aare.PerfLog.stop()
+        runCatching { context.getSystemService(android.os.PowerManager::class.java)?.removeThermalStatusListener(thermalListener) }
         pauseMusicOnLeave()
         net.prototux.aare.obd.ObdReader.stop(context)
         if (settings.accessibilityInCarOnly) net.prototux.aare.mirror.AccessibilitySwitch.carGone(context)
