@@ -274,6 +274,8 @@ class CarRuntime(
         ui.carPlayStyle = settings.carStyle == Settings.STYLE_CARPLAY
         ui.gtsStyle = gts
         ui.darkBar = settings.darkBar
+        ui.barApps = settings.barApps
+        ui.barRecents = settings.barRecents
         val wallpaper = settings.wallpaper
         if (wallpaper != ui.wallpaper || (wallpaper == Settings.WALLPAPER_CUSTOM && ui.wallpaperImage == null)) {
             ui.wallpaper = wallpaper
@@ -295,7 +297,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }
@@ -322,6 +324,7 @@ class CarRuntime(
         scope.launch { media.apps.collectLatest { refreshApps() } }
         scope.launch { NativeCompat.changes.collectLatest { refreshApps() } }
         if (primary) scope.launch { probeNativeApps() }
+        if (primary) main.postDelayed(cleanUp, CLEANUP_DELAY_MS)
         scope.launch { watchCalls() }
         scope.launch { watchDashboardInfo() }
         scope.launch {
@@ -334,10 +337,7 @@ class CarRuntime(
         }
         scope.launch {
             media.playback.collectLatest { p ->
-                ui.nowPlaying = p?.let {
-                    NowPlaying(mediaEntryId(it.packageName), it.title, listOf(it.artist, it.album).filter { s -> s.isNotBlank() }.joinToString(" · "),
-                        it.art, it.playing, it.positionMs, it.durationMs, it.sampledAtMs)
-                }
+                ui.nowPlaying = p?.let(::nowPlayingOf)
                 if (p != null && ui.activeMediaAppId == null) ui.activeMediaAppId = mediaEntryId(p.packageName)
             }
         }
@@ -353,9 +353,19 @@ class CarRuntime(
         connections.clear()
         clusterConnections.values.forEach { it.release() }
         clusterConnections.clear()
-        if (running.isEmpty()) PhoneApps.release()
+        if (running.isEmpty()) PhoneApps.release(keep = ui.apps.filter { it.video }.mapTo(HashSet()) { it.packageName })
         if (ownsMedia) media.release()
         if (primary) closeLeftovers(usedNatively)
+        if (primary) {
+            main.removeCallbacks(cleanUp)
+            PhoneCleanup.atDisconnect(context, settings)
+        }
+    }
+
+    /** Lightens the phone once the session has settled (see [PhoneCleanup]); the apps in use stay. */
+    private val cleanUp = Runnable {
+        val inUse = setOfNotNull(settings.mapCardApp.ifBlank { null }, media.playback.value?.packageName)
+        PhoneCleanup.atConnect(context, settings, inUse)
     }
 
     /**
@@ -398,7 +408,7 @@ class CarRuntime(
             val video = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 media.apps.value.map { it.packageName }.filterTo(HashSet()) { pkg ->
                     val category = runCatching { context.packageManager.getApplicationInfo(pkg, 0).category }.getOrDefault(-1)
-                    PhoneApps.kind(pkg, category) == PhoneApps.Kind.VIDEO
+                    PhoneApps.kind(pkg, category) == PhoneApps.Kind.VIDEO || pkg in PhoneApps.VIDEO_MUSIC
                 }
             }
             // The phone's dialer isn't mirrored for refusing: AARE's own Phone screen does its job
@@ -506,11 +516,19 @@ class CarRuntime(
             if (existing != null) {
                 // A video app is worth its own screen (the video) more than the session player: swap.
                 if (existing.kind == CarAppKind.MEDIA && PhoneApps.kind(pkg, a.category) == PhoneApps.Kind.VIDEO) entries.remove(existing)
-                else continue
+                else if (existing.kind == CarAppKind.MEDIA && pkg in PhoneApps.VIDEO_MUSIC && pkg !in settings.phoneAppsShown) {
+                    // A music app with videos keeps its music screen; its mirrored side only shows the video.
+                    val id = phoneAppId(pkg)
+                    phoneApps[id] = a
+                    entries += CarAppEntry(id, pkg, a.label, a.icon, CarAppKind.PHONE_APP, video = true, inGrid = false)
+                    continue
+                } else continue
             }
             val id = phoneAppId(pkg)
             phoneApps[id] = a
-            entries += CarAppEntry(id, pkg, a.label, a.icon, CarAppKind.PHONE_APP)
+            // Spotify mirrored (it refuses AARE's music screen) has videos too: the same buttons as YouTube.
+            entries += CarAppEntry(id, pkg, a.label, a.icon, CarAppKind.PHONE_APP,
+                video = PhoneApps.kind(pkg, a.category) == PhoneApps.Kind.VIDEO || pkg in PhoneApps.VIDEO_MUSIC)
         }
         // The order chosen on the phone first, then alphabetical.
         val order = settings.appOrder.withIndex().associate { (i, k) -> k to i }
@@ -524,6 +542,15 @@ class CarRuntime(
                 val same = entries.firstOrNull { it.packageName == pkg && it.kind == CarAppKind.PHONE_APP }
                     ?: entries.firstOrNull { it.packageName == pkg }
                 ui.screen = if (same != null) CarScreen.App(same.id) else CarScreen.Dashboard
+            }
+        }
+        // What's playing names its app by entry: the entries just changed (the mirrored apps came
+        // after it started playing: YouTube was taken for its media entry, not the video app).
+        media.playback.value?.let { ui.nowPlaying = nowPlayingOf(it) }
+        videoCardPending?.let { pkg ->
+            entries.firstOrNull { it.video && it.packageName == pkg }?.let { e ->
+                videoCardPending = null
+                if (ui.screen == CarScreen.Dashboard && ui.videoInCard == null) showVideoInCard(e)
             }
         }
         ui.activeMediaAppId?.let { id -> if (entries.none { it.id == id }) ui.activeMediaAppId = null }
@@ -540,6 +567,10 @@ class CarRuntime(
             }
         }
     }
+
+    private fun nowPlayingOf(p: net.prototux.aare.media.PlaybackInfo) =
+        NowPlaying(mediaEntryId(p.packageName), p.title, listOf(p.artist, p.album).filter { s -> s.isNotBlank() }.joinToString(" · "),
+            p.art, p.playing, p.positionMs, p.durationMs, p.sampledAtMs)
 
     /** The car entry for a media app's package: its native media screen, or the mirrored app when it refused AARE. */
     private fun mediaEntryId(pkg: String): String =
@@ -690,6 +721,17 @@ class CarRuntime(
                     connection(app.id)?.connect()
                 }
                 CarAppKind.PHONE_APP -> {
+                    // It takes the full-screen display: a video minimized there leaves the media card.
+                    ui.videoInCard = null
+                    if (app.video) {
+                        rememberVideoMode(app.packageName, picture = true)
+                        // A video app plays like music too: the media card and bar follow it (a music
+                        // app's video side leaves that to its music screen).
+                        if (app.inGrid) {
+                            ui.activeMediaAppId = app.id
+                            settings.lastMediaApp = app.packageName
+                        }
+                    }
                     // A music app opened mirrored (it refused AARE's media screen) is still the media app.
                     if (phoneApps[app.id]?.let { PhoneApps.kind(app.packageName, it.category) } == PhoneApps.Kind.MUSIC) {
                         ui.activeMediaAppId = app.id
@@ -708,8 +750,47 @@ class CarRuntime(
         override fun back() = this@CarRuntime.back()
         override fun openLauncher() { ui.screen = CarScreen.Launcher }
         override fun openMapFull() { ui.screen = CarScreen.MapFull }
+        override fun minimizeVideo() {
+            val id = (ui.screen as? CarScreen.App)?.appId?.takeIf { ui.app(it)?.video == true } ?: return
+            ui.app(id)?.let { rememberVideoMode(it.packageName, picture = true) }
+            DiagLog.add("video: ${ui.app(id)?.label} into the media card")
+            ui.videoInCard = id
+            ui.screen = CarScreen.Dashboard
+        }
+        override fun maximizeVideo() {
+            val entry = ui.app(ui.videoInCard) ?: run { ui.videoInCard = null; return }
+            DiagLog.add("video: ${entry.label} full screen again")
+            openApp(entry)
+        }
         override fun assistant() { this@CarRuntime.assistant() }
-        override fun mediaPlayPause() = media.playPause()
+        override fun mediaPlayPause() {
+            // A video app played from home: the way it played last, with its picture (in the
+            // media card) or as sound only.
+            val np = ui.nowPlaying
+            val pkg = media.playback.value?.packageName
+            if (np != null && !np.playing && pkg != null && ui.gtsStyle && ui.screen == CarScreen.Dashboard && ui.videoInCard == null &&
+                wantsPicture(pkg)) {
+                val entry = ui.apps.firstOrNull { it.video && it.packageName == pkg }
+                // Just connected, the mirrored apps may not be listed yet: shown once they are.
+                if (entry != null) showVideoInCard(entry) else videoCardPending = pkg
+            }
+            media.playPause()
+        }
+        override fun audioOnly() {
+            val entry = ui.app(ui.videoInCard) ?: (ui.screen as? CarScreen.App)?.let { ui.app(it.appId) }?.takeIf { it.video } ?: return
+            DiagLog.add("video: ${entry.label} as sound only")
+            rememberVideoMode(entry.packageName, picture = false)
+            ui.videoInCard = null
+            if (ui.screen == CarScreen.App(entry.id)) ui.screen = CarScreen.Dashboard
+        }
+        override fun showVideo() {
+            val pkg = media.playback.value?.packageName ?: ui.nowPlaying?.let { ui.app(it.appId) }?.packageName
+            val entry = ui.apps.firstOrNull { it.video && it.packageName == pkg } ?: return
+            DiagLog.add("video: ${entry.label} with its picture again, in the media card")
+            rememberVideoMode(entry.packageName, picture = true)
+            ui.videoInCard = entry.id
+            if (ui.screen != CarScreen.Dashboard) ui.screen = CarScreen.Dashboard
+        }
         override fun mediaNext() = media.next()
         override fun mediaPrevious() = media.previous()
         override fun dismissNotice(notice: CarNotice) { ui.notices.remove(notice) }
@@ -719,6 +800,33 @@ class CarRuntime(
             if (!this@CarRuntime.navigateTo(place)) notice(context.getString(R.string.notif_navigation_title), context.getString(R.string.notif_navigation_no_app_text))
         }
     }
+
+    /** A video app played from home before the mirrored apps were listed: into the card once they are. */
+    private var videoCardPending: String? = null
+
+    private fun showVideoInCard(entry: CarAppEntry) {
+        DiagLog.add("video: ${entry.label} plays in the media card (last played with its picture)")
+        ui.videoInCard = entry.id
+    }
+
+    /** How a video app played last (with its picture or sound only), for the next play from home. */
+    private fun rememberVideoMode(pkg: String, picture: Boolean) {
+        if (pkg in PhoneApps.VIDEO_MUSIC) {
+            val now = settings.musicWithPicture
+            val next = if (picture) now + pkg else now - pkg
+            if (next != now) settings.musicWithPicture = next
+            return
+        }
+        val now = settings.videoAudioOnly
+        val next = if (picture) now - pkg else now + pkg
+        if (next != now) settings.videoAudioOnly = next
+    }
+
+    /** Whether [pkg] played last with its picture: video apps unless set to sound only, music apps only if set so. */
+    private fun wantsPicture(pkg: String): Boolean =
+        if (pkg in PhoneApps.VIDEO_MUSIC) pkg in settings.musicWithPicture
+        else pkg !in settings.videoAudioOnly &&
+            PhoneApps.kind(pkg, runCatching { context.packageManager.getApplicationInfo(pkg, 0).category }.getOrDefault(-1)) == PhoneApps.Kind.VIDEO
 
     /** The chosen assistant's package, or the phone's default assistant. */
     private fun assistantPackage(): String? = settings.assistantPackage ?: Assistants.phoneDefault(context)
@@ -812,7 +920,12 @@ class CarRuntime(
             val mapCard: (@Composable (Modifier) -> Unit)? = cardApp?.let { component ->
                 { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card, reopen = false) }
             }
-            CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else LocalCarDimens.current, net.prototux.aare.ui.car.LocalMapCard provides mapCard) {
+            // A video minimized into the media card: the full-screen display, shown small there.
+            val videoCard: (@Composable (Modifier) -> Unit)? = ui.videoInCard?.let { id -> phoneApps[id] }?.let { a ->
+                { mod -> PhoneAppScreen(this, a.component, PhoneApps.Kind.VIDEO, ui.drivingRestricted, mod, reopen = true, inCard = true) }
+            }
+            CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else LocalCarDimens.current,
+                net.prototux.aare.ui.car.LocalMapCard provides mapCard, net.prototux.aare.ui.car.LocalVideoCard provides videoCard) {
                 CarShell(
                     state = ui,
                     actions = actions,
@@ -854,6 +967,7 @@ class CarRuntime(
     companion object {
         private const val TAG = "AareRuntime"
         private const val PROBE_DELAY_MS = 8_000L
+        private const val CLEANUP_DELAY_MS = 3_000L
         /** After the car session's last unbind, so the apps have finished with it. */
         private val LEFTOVER_DELAYS_MS = longArrayOf(5_000L, 20_000L)
         private const val PROBE_TIMEOUT_MS = 12_000L

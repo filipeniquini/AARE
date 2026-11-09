@@ -7,7 +7,9 @@ import android.view.Surface
 import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PauseCircle
@@ -47,6 +49,13 @@ internal fun PhoneAppScreen(
      * only when the display is new (the map card: what runs there, Gemini included, stays as it is).
      */
     reopen: Boolean = true,
+    /**
+     * The full-screen display shown small in the home screen's media card (a minimized video): the
+     * display keeps its size and density, its picture scaled down into the card. Resized to the
+     * card, YouTube laid itself out for a tiny screen, its buttons huge (2026-11-09). The car's
+     * back key and bar stay the car's.
+     */
+    inCard: Boolean = false,
 ) {
     val context = LocalContext.current
     val locked = rememberKeyguardLocked()
@@ -62,17 +71,40 @@ internal fun PhoneAppScreen(
         // Keep the density the display has while it is still a tablet at the new size: a new
         // density means a new display, and its apps would start over (the map card going full screen).
         val now = host.currentDpi
+        if (inCard && now > 0) return now
         return if (now > 0 && minOf(w, h) * 160 / now >= 600) now else PhoneApps.tabletDpi(w, h)
     }
 
+    val fullScreen = host === PhoneApps.full && !inCard
     DisposableEffect(Unit) {
-        val full = host === PhoneApps.full
-        if (full) runtime.screenBack = { host.back(); true }
+        if (fullScreen) runtime.screenBack = { host.back(); true }
         // The view's own surface callback detaches it (only if it's still the one shown).
-        onDispose { if (full) runtime.screenBack = null }
+        onDispose { if (fullScreen) { runtime.screenBack = null; runtime.ui.videoFullscreen = false } }
+    }
+    // A video app full screen: when its video takes the whole screen (bars hidden), the car's bar
+    // hides too. Asked every so often, while it's shown (a small dump of that app's windows).
+    if (fullScreen && kind == PhoneApps.Kind.VIDEO && show) {
+        androidx.compose.runtime.LaunchedEffect(component) {
+            while (true) {
+                val hides = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.hidesBars(component.packageName) }
+                if (runtime.ui.videoFullscreen != hides) {
+                    runtime.ui.videoFullscreen = hides
+                    net.prototux.aare.DiagLog.add("phone apps: ${component.packageName} ${if (hides) "full screen, bar hidden" else "not full screen, bar shown"}")
+                }
+                kotlinx.coroutines.delay(FULLSCREEN_CHECK_MS)
+            }
+        }
     }
 
-    Box(modifier.background(Color.Black)) {
+    // In the card: the display's own size, drawn scaled into the view (same proportions).
+    val cardSize = if (inCard) host.currentSize else null
+    // No display yet (played from home after a reconnection): made full-screen sized, the card's shape.
+    fun displaySize(w: Int, h: Int): Pair<Int, Int>? = when {
+        !inCard -> null
+        cardSize != null -> cardSize
+        else -> (w * CARD_FRESH_HEIGHT / h.coerceAtLeast(1)) to CARD_FRESH_HEIGHT
+    }
+    Box(modifier.background(Color.Black), contentAlignment = androidx.compose.ui.Alignment.Center) {
         if (show) {
             AndroidView(
                 factory = { ctx ->
@@ -81,12 +113,14 @@ internal fun PhoneAppScreen(
                     val view = TextureView(ctx).apply {
                         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                             override fun onSurfaceTextureAvailable(st: SurfaceTexture, w: Int, h: Int) {
+                                val (dw, dh) = displaySize(w, h)?.also { st.setDefaultBufferSize(it.first, it.second) } ?: (w to h)
                                 surface = Surface(st)
                                 // Opened each time it's shown: an app already running comes to the front as it was.
-                                host.attach(context, surface!!, w, h, dpiFor(w, h)) { fresh -> if (reopen || fresh) host.open(component) }
+                                host.attach(context, surface!!, dw, dh, dpiFor(dw, dh)) { fresh -> if (reopen || fresh) host.open(component) }
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
-                                surface?.let { host.attach(context, it, w, h, dpiFor(w, h)) }
+                                val (dw, dh) = displaySize(w, h)?.also { st.setDefaultBufferSize(it.first, it.second) } ?: (w to h)
+                                surface?.let { host.attach(context, it, dw, dh, dpiFor(dw, dh)) }
                             }
                             override fun onSurfaceTextureDestroyed(st: SurfaceTexture): Boolean {
                                 host.detach(surface)
@@ -96,11 +130,16 @@ internal fun PhoneAppScreen(
                             override fun onSurfaceTextureUpdated(st: SurfaceTexture) = Unit
                         }
                         // The display is exactly this view's size: its pixels are the app's.
-                        setOnTouchListener { _, e -> host.touch(e); true }
+                        setOnTouchListener { _, e ->
+                            // A touch on a full-screen video brings up its controls: the car's bar comes with them.
+                            if (fullScreen && e.actionMasked == android.view.MotionEvent.ACTION_DOWN) runtime.ui.barPeekAt = android.os.SystemClock.uptimeMillis()
+                            host.touch(e); true
+                        }
                     }
                     view
                 },
-                modifier = Modifier.fillMaxSize(),
+                modifier = if (cardSize != null) Modifier.fillMaxSize().wrapContentSize()
+                    .aspectRatio(cardSize.first.toFloat() / cardSize.second) else Modifier.fillMaxSize(),
             )
         }
         when {
@@ -110,3 +149,9 @@ internal fun PhoneAppScreen(
         }
     }
 }
+
+/** How often a video app is asked whether it's full screen. */
+private const val FULLSCREEN_CHECK_MS = 1_500L
+
+/** The height of a display first made for the media card: about the car screen's, so apps lay out as there. */
+private const val CARD_FRESH_HEIGHT = 653

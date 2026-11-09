@@ -31,6 +31,19 @@ interface IShellAudio {
      */
     boolean killBackgroundApp(String packageName) = 6;
 
+    /**
+     * Ends the cached background processes (what Android does itself when memory runs short; apps
+     * keep their notifications and alarms), except those of the [keep] packages. Returns how many
+     * packages were ended, or -1 if it couldn't.
+     */
+    int killAllBackground(in String[] keep) = 7;
+
+    /**
+     * Pauses an app the user picked for car sessions (am force-stop) or lets it run again
+     * (cmd package unstop). Never AARE, Shizuku or the system. Returns whether it succeeded.
+     */
+    boolean pauseApp(String packageName, boolean pause) = 8;
+
     /** Shizuku's user-service teardown call. */
     void destroy() = 16777114;
 }

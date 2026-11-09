@@ -129,6 +129,28 @@ class ShellAudioService : IShellAudio.Stub {
         run("am", "kill", packageName) != null
     }.getOrDefault(false)
 
+    /**
+     * As am kill-all, sparing [keep]: the car's media and navigation apps, paused in the background,
+     * kept their place (a paused YouTube was ended and the media card's play did nothing, 2026-11-09).
+     */
+    @SuppressLint("PrivateApi")
+    override fun killAllBackground(keep: Array<out String>?): Int = runCatching {
+        val am = HiddenApiBypass.invoke(Class.forName("android.app.ActivityManager"), null, "getService")!!
+        @Suppress("UNCHECKED_CAST")
+        val procs = HiddenApiBypass.invoke(am.javaClass, am, "getRunningAppProcesses") as List<android.app.ActivityManager.RunningAppProcessInfo>
+        val spared = (keep?.toSet() ?: emptySet()) + net.prototux.aare.host.PhoneCleanup.NEVER_PAUSED
+        val cached = procs.filter { it.importance >= android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED }
+            .flatMap { it.pkgList?.toList() ?: emptyList() }.toSet() - spared
+        val user = Process.myUserHandle().hashCode()
+        cached.count { pkg -> runCatching { HiddenApiBypass.invoke(am.javaClass, am, "killBackgroundProcesses", pkg, user) }.isSuccess }
+    }.onFailure { Log.w(TAG, "kill background", it) }.getOrDefault(-1)
+
+    override fun pauseApp(packageName: String, pause: Boolean): Boolean = runCatching {
+        require(Regex("[A-Za-z][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+").matches(packageName)) { "not a package name" }
+        require(packageName !in net.prototux.aare.host.PhoneCleanup.NEVER_PAUSED && !packageName.startsWith("com.android.") && !packageName.startsWith("android.")) { "not that one" }
+        (if (pause) run("am", "force-stop", packageName) else run("cmd", "package", "unstop", packageName)) != null
+    }.getOrDefault(false)
+
     override fun bluetoothAddress(): String? = runCatching {
         run("settings", "get", "secure", "bluetooth_address")?.trim()?.takeIf { Regex("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}").matches(it) }
     }.getOrNull()

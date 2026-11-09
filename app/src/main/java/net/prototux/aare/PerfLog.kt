@@ -118,6 +118,10 @@ object PerfLog {
             row["heap_mb"] = (rt.totalMemory() - rt.freeMemory()) / 1_048_576
             row["native_mb"] = Debug.getNativeHeapAllocatedSize() / 1_048_576
             row["pss_mb"] = Debug.getPss() / 1024
+            // The whole phone's memory: with it full, Android spends CPU (and heat) swapping.
+            val phone = net.prototux.aare.host.PhoneMemory.read()
+            row["phone_avail_mb"] = phone?.availableMb
+            row["phone_swap_free_mb"] = phone?.swapFreeMb
             val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             row["batt_pct"] = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
             row["batt_c"] = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.let { it / 10.0 }

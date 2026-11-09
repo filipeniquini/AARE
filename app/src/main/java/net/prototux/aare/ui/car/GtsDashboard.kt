@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -114,6 +115,9 @@ private const val MEDIA_SHARE_MAX = 0.40f
  * provided by the car runtime; null keeps the car navigation app's card.
  */
 val LocalMapCard = androidx.compose.runtime.compositionLocalOf<(@Composable (Modifier) -> Unit)?> { null }
+
+/** The video minimized into the media card ([CarUiState.videoInCard]), provided by the car runtime. */
+val LocalVideoCard = androidx.compose.runtime.compositionLocalOf<(@Composable (Modifier) -> Unit)?> { null }
 
 /** The right column's width against the map card's 1: about 30 % of the screen, as in the user's sketch. */
 private const val GTS_SIDE_WEIGHT = 0.42f
@@ -314,6 +318,16 @@ private fun Reading(icon: ImageVector, label: String, value: String, unit: Strin
 /** The player: the album art behind, source, title and artist, progress and the buttons. */
 @Composable
 private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modifier) {
+    // A video minimized from full screen plays here; a touch brings it back full screen (its
+    // buttons are in the bar's media widget meanwhile).
+    val video = LocalVideoCard.current
+    if (state.videoInCard != null && video != null) {
+        Card(modifier) {
+            video(Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().clickable { actions.maximizeVideo() })
+        }
+        return
+    }
     val np = state.nowPlaying
     val media = state.app(np?.appId ?: state.activeMediaAppId)
     Card(modifier, onClick = { media?.let(actions::openApp) ?: actions.openLauncher() }) {
@@ -325,8 +339,18 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
             val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 225f))
             val button = (maxHeight * 0.3f).coerceIn(36.dp, LocalCarDimens.current.touchTarget)
             Column(Modifier.fillMaxSize().padding(horizontal = s.dp(20f), vertical = s.dp(12f))) {
-                Text((stringResource(R.string.gts_media_source) + " · " + (media?.label ?: stringResource(R.string.media_fallback_label))).uppercase(), fontSize = s.sp(12f),
-                    letterSpacing = s.sp(0.8f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text((stringResource(R.string.gts_media_source) + " · " + (media?.label ?: stringResource(R.string.media_fallback_label))).uppercase(), fontSize = s.sp(12f),
+                        letterSpacing = s.sp(0.8f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, modifier = Modifier.weight(1f))
+                    // A video app playing as sound only: its picture back, here in the card.
+                    if (media != null && state.apps.any { it.video && it.packageName == media.packageName }) {
+                        val size = s.dp(34f)
+                        Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .clickable { actions.showVideo() }, contentAlignment = Alignment.Center) {
+                            Icon(Icons.Rounded.OndemandVideo, stringResource(R.string.video_show), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(size * 0.6f))
+                        }
+                    }
+                }
                 Text(np?.title ?: stringResource(R.string.media_nothing_playing), fontSize = s.sp(22f), fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (np != null && np.subtitle.isNotEmpty()) {

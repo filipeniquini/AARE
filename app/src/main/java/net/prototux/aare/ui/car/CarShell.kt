@@ -1,6 +1,11 @@
 package net.prototux.aare.ui.car
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,6 +29,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -36,12 +42,16 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.OpenInFull
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SpaceDashboard
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Icon
@@ -55,6 +65,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,17 +116,46 @@ fun CarShell(
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().then(modifier)) {
             val portrait = maxHeight > maxWidth
+            // A video full screen gets the whole screen and the bar floats over it: hidden, it
+            // slides in with the video's own controls (a touch on the video) and stays while the
+            // video is paused. The app keeps its size: only going full screen resizes it, once.
+            val immersive = state.videoFullscreen && state.screen is CarScreen.App
+            var peek by remember { mutableStateOf(false) }
+            LaunchedEffect(state.barPeekAt, immersive) {
+                val left = BAR_PEEK_MS - (android.os.SystemClock.uptimeMillis() - state.barPeekAt)
+                if (immersive && state.barPeekAt > 0 && left > 0) { peek = true; delay(left); peek = false } else peek = false
+            }
+            val onScreen = (state.screen as? CarScreen.App)?.let { state.app(it.appId) }
+            val np = state.nowPlaying
+            val paused = np != null && !np.playing && onScreen != null && state.app(np.appId)?.packageName == onScreen.packageName
             if (portrait || state.railBottom) {
                 Column(Modifier.fillMaxSize()) {
                     ContentArea(state, actions, appContent, navMap, Modifier.weight(1f))
-                    Rail(state, actions, horizontal = true)
+                    if (!immersive) Rail(state, actions, horizontal = true)
                 }
             } else {
                 Row(Modifier.fillMaxSize()) {
-                    if (!state.railOnRight) Rail(state, actions, horizontal = false)
+                    if (!state.railOnRight && !immersive) Rail(state, actions, horizontal = false)
                     ContentArea(state, actions, appContent, navMap, Modifier.weight(1f))
-                    if (state.railOnRight) Rail(state, actions, horizontal = false)
+                    if (state.railOnRight && !immersive) Rail(state, actions, horizontal = false)
                 }
+            }
+            // Drawn after the content, so over the video: a short see-through column of the bar's navigation buttons on the
+            // driver's side, centred (no apps, widget or phone status: the video stays in view).
+            val side = if (state.driverOnRight) 1 else -1
+            AnimatedVisibility(immersive && (peek || paused),
+                Modifier.align(if (state.driverOnRight) Alignment.CenterEnd else Alignment.CenterStart).padding(horizontal = 12.dp),
+                enter = slideInHorizontally(tween(BAR_SLIDE_MS)) { it * side } + fadeIn(tween(BAR_SLIDE_MS)),
+                exit = slideOutHorizontally(tween(BAR_SLIDE_MS)) { it * side } + fadeOut(tween(BAR_SLIDE_MS))) {
+                Box(Modifier.pointerInput(Unit) {
+                    // Using it keeps it up.
+                    awaitPointerEventScope {
+                        while (true) {
+                            val e = awaitPointerEvent(PointerEventPass.Initial)
+                            if (e.changes.any { it.pressed }) state.barPeekAt = android.os.SystemClock.uptimeMillis()
+                        }
+                    }
+                }) { VideoRail(state, actions) }
             }
             overlay(Modifier.align(Alignment.BottomCenter))
             NoticeOverlay(state, actions, Modifier.align(Alignment.TopCenter))
@@ -162,6 +204,12 @@ private fun ContentArea(
 
 // ---------------------------------------------------------------- rail
 
+/** How long the bar stays up over a full-screen video after a touch (about as long as its controls). */
+private const val BAR_PEEK_MS = 4_000L
+
+/** The bar sliding over a full-screen video. */
+private const val BAR_SLIDE_MS = 220
+
 /**
  * The rail, laid out like Android Auto's taskbar: the voice button at the driver's end with the
  * menu button (the app grid on the home screen, home anywhere else) next to it, the apps in the
@@ -185,36 +233,66 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
     val phone = state.apps.firstOrNull { it.kind == CarAppKind.PHONE }
     val settings = state.apps.firstOrNull { it.kind == CarAppKind.SETTINGS }
     fun on(app: CarAppEntry?) = app != null && state.screen == CarScreen.App(app.id)
-    // Like Android Auto's taskbar: the apps used last, besides the fixed ones (one on a side rail, for height).
-    val fixed = setOfNotNull(nav?.id, media?.id, phone?.id, settings?.id)
-    val recent = state.recentAppIds.filter { it !in fixed }.mapNotNull(state::app)
     // A bottom bar on a portrait screen is short of width (76 dp per button): fewer apps and no
     // weather there, the launcher has them all. Landscape bars keep everything.
     val conf = LocalConfiguration.current
     val tightBar = horizontal && conf.screenHeightDp > conf.screenWidthDp && conf.screenWidthDp < 800
     val tighterBar = tightBar && conf.screenWidthDp < 640
+    // The bar's own apps: the ones chosen on the phone (Apps page), in their order, or Android
+    // Auto's set (navigation, not on the GTS home screen whose big card is the map; media; phone;
+    // settings). The media and navigation slots follow the apps in use.
+    val gts = LocalGtsStyle.current
+    val custom = state.barApps
+    val chosen: List<Pair<CarAppEntry?, ImageVector>> = custom?.mapNotNull { key ->
+        when (key) {
+            net.prototux.aare.Settings.BAR_MEDIA -> media to Icons.Rounded.MusicNote
+            net.prototux.aare.Settings.BAR_NAV -> nav to Icons.Rounded.Map
+            else -> state.apps.firstOrNull { it.inGrid && (it.id == key || it.packageName == key) }?.let { it to Icons.Rounded.Apps }
+        }
+    } ?: listOfNotNull(
+        if (!gts) nav to Icons.Rounded.Map else null,
+        media to Icons.Rounded.MusicNote,
+        phone?.let { it to Icons.Rounded.Call },
+        settings?.takeIf { !tighterBar }?.let { it to Icons.Rounded.Settings },
+    )
+    // Like Android Auto's taskbar: the apps used last, besides those (after the media app by default).
+    val fixed = chosen.mapNotNullTo(HashSet()) { it.first?.id }
+    val recent = state.recentAppIds.filter { it !in fixed }.mapNotNull(state::app)
+    val recentAt = if (custom == null) chosen.indexOfFirst { it.second == Icons.Rounded.MusicNote } + 1 else chosen.size
     val apps: @Composable (Int) -> Unit = { recentSlots ->
-        // Not on the GTS home screen, whose big card is the map (full screen from its own button).
-        if (!LocalGtsStyle.current) RailApp(nav, Icons.Rounded.Map, on(nav)) { nav?.let(actions::openApp) ?: actions.openLauncher() }
-        RailApp(media, Icons.Rounded.MusicNote, on(media)) { media?.let(actions::openApp) ?: actions.openLauncher() }
-        recent.take(recentSlots).forEach { app -> RailApp(app, Icons.Rounded.Apps, on(app)) { actions.openApp(app) } }
-        phone?.let { RailApp(it, Icons.Rounded.Call, on(it)) { actions.openApp(it) } }
-        settings?.takeIf { !tighterBar }?.let { RailApp(it, Icons.Rounded.Settings, on(it)) { actions.openApp(it) } }
+        val np = state.nowPlaying
+        val widget = np != null && (state.screen != CarScreen.Dashboard || state.videoInCard != null)
+        chosen.forEachIndexed { i, (app, icon) ->
+            if (i == recentAt) recent.take(recentSlots).forEach { r -> RailApp(r, Icons.Rounded.Apps, on(r)) { actions.openApp(r) } }
+            RailApp(app, icon, on(app)) { app?.let(actions::openApp) ?: actions.openLauncher() }
+            // A side rail: play/pause under the media app when the widget would show (no room for it).
+            if (icon == Icons.Rounded.MusicNote && widget && !horizontal) RailButton(if (np!!.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                stringResource(R.string.media_action_play_pause), selected = false) { actions.mediaPlayPause() }
+        }
+        if (recentAt >= chosen.size) recent.take(recentSlots).forEach { r -> RailApp(r, Icons.Rounded.Apps, on(r)) { actions.openApp(r) } }
+        // Like Android Auto's: what's playing, with its buttons, right of the apps, on every screen
+        // but home (and on home too while a video sits in the media card).
+        if (widget && horizontal) MediaWidget(state, np!!, state.app(np.appId) ?: media, actions)
     }
     // A phone app (or the mirrored phone screen) has no back of its own on the car: add one by home.
     val current = (state.screen as? CarScreen.App)?.let { state.app(it.appId) }
     val needsBack = current?.kind == CarAppKind.PHONE_APP || current?.kind == CarAppKind.PHONE_SCREEN
     val menu: @Composable () -> Unit = {
-        if (state.screen == CarScreen.Dashboard) RailButton(Icons.Rounded.Apps, stringResource(R.string.dash_menu_apps), selected = false) { actions.openLauncher() }
-        else RailButton(Icons.Rounded.Home, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
-        if (needsBack) RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
-        // The GTS map card full screen and back, next to the app grid: only on the home screen
-        // and while the map is full screen.
-        if (LocalMapCard.current != null) when (state.screen) {
-            CarScreen.Dashboard -> RailButton(Icons.Rounded.OpenInFull, stringResource(R.string.map_expand), selected = false) { actions.openMapFull() }
-            CarScreen.MapFull -> RailButton(Icons.Rounded.CloseFullscreen, stringResource(R.string.map_collapse), selected = false) { actions.goHome() }
-            else -> Unit
+        // Android Auto's one button: on the home screen it puts the map full screen (the GTS map
+        // card; the app grid without one), with the map full screen it opens the app grid, and
+        // anywhere else it goes back to the home screen (the dashboard icon).
+        val mapCard = LocalMapCard.current != null
+        when {
+            state.screen == CarScreen.Dashboard && mapCard -> RailButton(Icons.Rounded.Fullscreen, stringResource(R.string.map_expand), selected = false) { actions.openMapFull() }
+            state.screen == CarScreen.Dashboard || state.screen == CarScreen.MapFull ->
+                RailButton(Icons.Rounded.Apps, stringResource(R.string.dash_menu_apps), selected = false) { actions.openLauncher() }
+            else -> RailButton(Icons.Rounded.SpaceDashboard, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
         }
+        if (needsBack) RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
+        // A video app full screen goes into the home screen's media card (GTS home screen); the
+        // media widget brings it back.
+        if (LocalGtsStyle.current && current?.kind == CarAppKind.PHONE_APP && current.video)
+            RailButton(Icons.Rounded.PictureInPictureAlt, stringResource(R.string.video_minimize), selected = false) { actions.minimizeVideo() }
     }
     val mic: @Composable () -> Unit = { MicButton(state.listening) { actions.assistant() } }
     val bell = { state.apps.firstOrNull { it.kind == CarAppKind.NOTIFICATIONS }?.let(actions::openApp) }
@@ -232,7 +310,7 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
             } }
             if (state.driverOnRight) status() else driverEnd()
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { apps(if (tightBar) 0 else 2) }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { apps(if (tightBar) 0 else state.barRecents) }
             }
             if (state.driverOnRight) driverEnd() else status()
         }
@@ -250,12 +328,34 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
             Spacer(Modifier.weight(1f))
             // A side rail has room for a recent app only on tall screens.
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                apps(if (LocalConfiguration.current.screenHeightDp >= 800) 1 else 0)
+                apps(minOf(state.barRecents, if (LocalConfiguration.current.screenHeightDp >= 800) 1 else 0))
             }
             Spacer(Modifier.weight(1f))
             menu()
             Spacer(Modifier.height(8.dp))
             mic()
+        }
+    }
+}
+
+/**
+ * The bar over a full-screen video: only its navigation buttons (home, back, into the media card),
+ * in a short dark see-through column.
+ */
+@Composable
+private fun VideoRail(state: CarUiState, actions: CarActions) {
+    CarTheme(night = true, gts = LocalGtsStyle.current) {
+        val current = (state.screen as? CarScreen.App)?.let { state.app(it.appId) }
+        Column(
+            Modifier.clip(RoundedCornerShape(32.dp)).background(Color.Black.copy(alpha = 0.55f)).padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            RailButton(Icons.Rounded.SpaceDashboard, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
+            if (current?.kind == CarAppKind.PHONE_APP || current?.kind == CarAppKind.PHONE_SCREEN)
+                RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
+            if (LocalGtsStyle.current && current?.kind == CarAppKind.PHONE_APP && current.video)
+                RailButton(Icons.Rounded.PictureInPictureAlt, stringResource(R.string.video_minimize), selected = false) { actions.minimizeVideo() }
         }
     }
 }
@@ -302,6 +402,64 @@ private fun RailApp(app: CarAppEntry?, fallback: ImageVector, selected: Boolean,
         contentAlignment = Alignment.Center,
     ) {
         Image(app.icon.asImageBitmap(), app.label, Modifier.size(d.railButton * 0.63f).clip(CircleShape))
+    }
+}
+
+/**
+ * Android Auto's media widget in the bar: the art, what's playing and its buttons. A tap opens the
+ * player, or brings the video in the media card back full screen.
+ */
+@Composable
+private fun MediaWidget(state: CarUiState, np: NowPlaying, app: CarAppEntry?, actions: CarActions) {
+    val d = LocalCarDimens.current
+    val shape = RoundedCornerShape(d.railButton / 2)
+    val inCard = state.videoInCard?.let(state::app)
+    Row(
+        Modifier.height(d.railButton).widthIn(max = 380.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .carFocusHighlight(shape)
+            .clickable {
+                if (inCard != null && (app == null || app.packageName == inCard.packageName)) actions.maximizeVideo()
+                else app?.let(actions::openApp)
+            }
+            .padding(start = 6.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val art = d.railButton * 0.72f
+        val artShape = RoundedCornerShape(10.dp)
+        when {
+            np.art != null -> Image(np.art.asImageBitmap(), null, Modifier.size(art).clip(artShape), contentScale = ContentScale.Crop)
+            app?.icon != null -> Image(app.icon.asImageBitmap(), app.label, Modifier.size(art).clip(CircleShape))
+            else -> Box(Modifier.size(art).clip(artShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(art * 0.55f))
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(np.title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (np.subtitle.isNotEmpty()) Text(np.subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Spacer(Modifier.width(4.dp))
+        val button = d.railButton * 0.8f
+        val buttons = buildList {
+            // The video in the media card: back full screen from here.
+            if (inCard != null) add(Triple(Icons.Rounded.Fullscreen, R.string.video_maximize) { actions.maximizeVideo() })
+            // A video showing (in the card or full screen): on as sound only.
+            // (its mirrored side: Spotify plays as music, its video shows from the mirrored app)
+            val pkg = state.app(np.appId)?.packageName
+            val playing = state.apps.firstOrNull { it.video && it.packageName == pkg }
+            if (playing != null && (state.videoInCard == playing.id || state.screen == CarScreen.App(playing.id)))
+                add(Triple(Icons.Rounded.Headphones, R.string.video_audio_only) { actions.audioOnly() })
+            addAll(listOf(
+            Triple(if (np.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, R.string.media_action_play_pause) { actions.mediaPlayPause() },
+            Triple(Icons.Rounded.SkipNext, R.string.media_action_next) { actions.mediaNext() },
+            ))
+        }
+        for ((icon, label, run) in buttons) {
+            Box(Modifier.size(button).clip(CircleShape).clickable(onClick = run), contentAlignment = Alignment.Center) {
+                Icon(icon, stringResource(label), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(d.railIcon))
+            }
+        }
     }
 }
 
@@ -572,7 +730,7 @@ private fun Launcher(state: CarUiState, actions: CarActions, modifier: Modifier)
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Already in the user's order (CarRuntime.applyApps).
-        items(state.apps, key = { it.id }) { app ->
+        items(state.apps.filter { it.inGrid }, key = { it.id }) { app ->
             Column(
                 Modifier.clip(RoundedCornerShape(24.dp)).clickable { actions.openApp(app) }.padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,

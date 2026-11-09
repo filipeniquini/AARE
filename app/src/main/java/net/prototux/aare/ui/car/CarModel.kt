@@ -3,6 +3,7 @@ package net.prototux.aare.ui.car
 import android.graphics.Bitmap
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,6 +22,13 @@ class CarAppEntry(
     val label: String,
     val icon: Bitmap?,
     val kind: CarAppKind,
+    /** A video app opened mirrored (YouTube...): it may go into the home screen's media card. */
+    val video: Boolean = false,
+    /**
+     * Listed in the app grid. A music app's mirrored side, kept only to show its video (Spotify's
+     * video podcasts and clips) in the media card, isn't: its own music screen is there.
+     */
+    val inGrid: Boolean = true,
 )
 
 @Stable
@@ -121,6 +129,16 @@ class CarUiState {
     var gtsStyle by mutableStateOf(false)
     /** The rail runs along the bottom instead of a side. */
     var railBottom by mutableStateOf(false)
+    /** The app on the car screen shows a video full screen (its bars hidden): AARE's bar hides too. */
+    var videoFullscreen by mutableStateOf(false)
+    /** When the driver last touched that video (uptime ms): the bar shows for a moment, with the video's controls. */
+    var barPeekAt by mutableLongStateOf(0L)
+    /** The bar's own apps chosen on the phone (keys as Settings.barApps), or null for the default set. */
+    var barApps by mutableStateOf<List<String>?>(null)
+    /** How many recent apps the bar adds. */
+    var barRecents by mutableStateOf(2)
+    /** The video app (entry id) minimized into the home screen's media card, or null. */
+    var videoInCard by mutableStateOf<String?>(null)
 
     fun app(id: String?): CarAppEntry? = apps.firstOrNull { it.id == id }
 }
@@ -147,4 +165,12 @@ interface CarActions {
     fun back() {}
     /** The map card full screen (Android Auto's navigation app taking the screen from its dashboard card). */
     fun openMapFull() {}
+    /** The video app on screen goes into the home screen's media card (Android Auto's minimize). */
+    fun minimizeVideo() {}
+    /** The video in the media card goes back full screen. */
+    fun maximizeVideo() {}
+    /** The video playing goes on as sound only (and is remembered so). */
+    fun audioOnly() {}
+    /** The video app playing as sound only shows its picture again, in the media card (remembered). */
+    fun showVideo() {}
 }

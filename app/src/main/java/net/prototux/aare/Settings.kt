@@ -137,6 +137,21 @@ class Settings(context: Context) {
         get() = prefs.getStringSet("phone_apps_shown", emptySet()) ?: emptySet()
         set(v) = prefs.edit { putStringSet("phone_apps_shown", v) }
 
+    /** When the car connects, end the phone's cached background apps to free memory (am kill-all). */
+    var cleanUpInCar: Boolean
+        get() = prefs.getBoolean("clean_up_in_car", true)
+        set(v) = prefs.edit { putBoolean("clean_up_in_car", v) }
+
+    /** Apps the user picked to pause (force stop) while the car is connected, let run again after. */
+    var pauseInCar: Set<String>
+        get() = prefs.getStringSet("pause_in_car", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("pause_in_car", HashSet(v)) }
+
+    /** The apps paused now, to let them run again even if AARE was gone when the car left. */
+    var pausedNow: Set<String>
+        get() = prefs.getStringSet("paused_now", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("paused_now", HashSet(v)) }
+
     /** Whether each app opened natively or refused AARE ("package@version=NATIVE|REFUSED"), see NativeCompat. */
     var nativeResults: Set<String>
         get() = prefs.getStringSet("native_results", emptySet()) ?: emptySet()
@@ -241,6 +256,29 @@ class Settings(context: Context) {
         get() = prefs.getString("app_order", null)?.split('\n')?.filter { it.isNotBlank() } ?: emptyList()
         set(v) = prefs.edit { putString("app_order", v.joinToString("\n")) }
 
+    /**
+     * The apps the car's bar shows besides the recent ones, in order: app keys as [appOrder], or
+     * [BAR_MEDIA] / [BAR_NAV] for the media or navigation app in use. Null: the default set.
+     */
+    var barApps: List<String>?
+        get() = prefs.getString("bar_apps", null)?.split('\n')?.filter { it.isNotBlank() }
+        set(v) = prefs.edit { if (v == null) remove("bar_apps") else putString("bar_apps", v.joinToString("\n")) }
+
+    /** Video apps last played as sound only (the others play with their picture, in the media card). */
+    var videoAudioOnly: Set<String>
+        get() = prefs.getStringSet("video_audio_only", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("video_audio_only", HashSet(v)) }
+
+    /** Music apps with videos (Spotify...) last played with their picture in the media card. */
+    var musicWithPicture: Set<String>
+        get() = prefs.getStringSet("music_with_picture", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("music_with_picture", HashSet(v)) }
+
+    /** How many recently used apps the bar adds (Android Auto's taskbar shows the last ones). */
+    var barRecents: Int
+        get() = prefs.getInt("bar_recents", 2)
+        set(v) = prefs.edit { putInt("bar_recents", v.coerceIn(0, 4)) }
+
     /** Apps hidden from the car launcher. */
     var hiddenApps: Set<String>
         get() = prefs.getStringSet("hidden_apps", emptySet()) ?: emptySet()
@@ -275,6 +313,10 @@ class Settings(context: Context) {
         val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
         /** [phoneAppsDpi] value for "tablet": the largest size at which apps still lay out as on a tablet (see PhoneApps.tabletDpi). */
         const val PHONE_APPS_DPI_TABLET = 0
+        /** In [barApps]: whichever media app is in use. */
+        const val BAR_MEDIA = "@media"
+        /** In [barApps]: whichever navigation app is in use. */
+        const val BAR_NAV = "@nav"
         /** The resolutions offered for the mirrored phone screen, sharpest first. */
         val MIRROR_SCALES = listOf(100, 75, 50)
         const val WALLPAPER_CUSTOM = "custom"

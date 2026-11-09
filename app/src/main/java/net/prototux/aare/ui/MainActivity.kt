@@ -799,6 +799,8 @@ private fun AppsCard(settings: Settings) {
         }
         if (l != null) PhoneAppsSection(settings, l)
         if (l != null) AppOrder(settings, l, hidden, phoneScreen)
+        if (l != null) BarSection(settings, l, hidden, phoneScreen)
+        CarSavingSection(settings)
         val unsupported by produceState(emptyList<UnsupportedCarApp>(), l) {
             if (l != null) value = withContext(Dispatchers.IO) { AndroidAutoApps.unsupported(ctx, l.carApps.map { it.packageName }) }
         }
@@ -878,6 +880,117 @@ private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
                     settings.phoneAppsShown = shown
                 }
             }
+    }
+}
+
+/**
+ * Lighter phone in the car (PhoneCleanup): the clean-up of idle background apps when the car
+ * connects, and the apps the user picks to pause while it is connected.
+ */
+@Composable
+private fun CarSavingSection(settings: Settings) {
+    val ctx = LocalContext.current
+    var clean by remember { mutableStateOf(settings.cleanUpInCar) }
+    var paused by remember { mutableStateOf(settings.pauseInCar) }
+    var filter by remember { mutableStateOf("") }
+    val chosenAtOpen = remember { settings.pauseInCar }
+    val never = remember { net.prototux.aare.host.PhoneCleanup.NEVER_PAUSED }
+    val apps by produceState<List<net.prototux.aare.apps.PhoneApps.App>?>(null) {
+        value = withContext(Dispatchers.IO) {
+            net.prototux.aare.apps.PhoneApps.query(ctx, 96)
+                .filter { val p = it.component.packageName; p !in never && !p.startsWith("com.android.") }
+                .distinctBy { it.component.packageName }
+                .sortedBy { it.label.lowercase() }
+        }
+    }
+    Section(stringResource(R.string.car_saving_section)) {
+        Toggle(stringResource(R.string.car_saving_cleanup_title), stringResource(R.string.car_saving_cleanup_subtitle), clean) { clean = it; settings.cleanUpInCar = it }
+        AppGroup(stringResource(R.string.car_saving_pause, paused.size))
+        Text(stringResource(R.string.car_saving_pause_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.material3.OutlinedTextField(filter, { filter = it }, Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.phone_apps_search)) }, singleLine = true)
+        val list = apps
+        if (list == null) {
+            Text(stringResource(R.string.setup_app_list_loading), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+            return@Section
+        }
+        list.filter { filter.isBlank() || it.label.contains(filter.trim(), ignoreCase = true) }
+            .sortedByDescending { it.component.packageName in chosenAtOpen }
+            // Without a search, the chosen ones only: the whole list is long.
+            .filter { filter.isNotBlank() || it.component.packageName in chosenAtOpen || it.component.packageName in paused }
+            .forEach { app ->
+                val pkg = app.component.packageName
+                AppRow(app.icon, app.label, pkg, pkg in paused) { on ->
+                    paused = if (on) paused + pkg else paused - pkg
+                    settings.pauseInCar = paused
+                }
+            }
+    }
+}
+
+/**
+ * The car bar's own apps (Settings.barApps): which ones, in what order, and how many recent apps
+ * it adds. Until the user changes it, Android Auto's set shows.
+ */
+@Composable
+private fun BarSection(settings: Settings, l: LauncherLists, hidden: Set<String>, phoneScreen: Boolean) {
+    val ctx = LocalContext.current
+    val gts = settings.carStyle == Settings.STYLE_GTS
+    val default = listOfNotNull(if (gts) null else Settings.BAR_NAV, Settings.BAR_MEDIA, CarRuntime.PHONE_ID, CarRuntime.SETTINGS_ID)
+    var chosen by remember { mutableStateOf(settings.barApps ?: default) }
+    var recents by remember { mutableStateOf(settings.barRecents) }
+    // Everything the car lists (keys as the launcher order), with the mirrored phone apps chosen for it.
+    val shownPhoneApps by produceState(emptyList<Triple<String, String, android.graphics.Bitmap?>>()) {
+        value = withContext(Dispatchers.IO) {
+            val picked = settings.phoneAppsShown
+            if (picked.isEmpty()) emptyList()
+            else net.prototux.aare.apps.PhoneApps.query(ctx, 96).filter { it.component.packageName in picked }
+                .distinctBy { it.component.packageName }.map { Triple(it.component.packageName, it.label, it.icon) }
+        }
+    }
+    val all = buildList {
+        add(Triple(Settings.BAR_MEDIA, stringResource(R.string.bar_media_in_use), null))
+        add(Triple(Settings.BAR_NAV, stringResource(R.string.bar_nav_in_use), null))
+        l.carApps.forEach { add(Triple(it.packageName, it.label, it.icon)) }
+        l.media.forEach { add(Triple(it.packageName, it.label, it.icon)) }
+        l.messaging.forEach { add(Triple(it.packageName, it.label, it.icon)) }
+        addAll(shownPhoneApps)
+        add(Triple(CarRuntime.PHONE_ID, stringResource(R.string.setup_app_entry_phone), null))
+        add(Triple(CarRuntime.SETTINGS_ID, stringResource(R.string.setup_app_entry_settings), null))
+        add(Triple(CarRuntime.NOTIFICATIONS_ID, stringResource(R.string.setup_app_entry_notifications), null))
+        if (phoneScreen) add(Triple(CarRuntime.PHONE_SCREEN_ID, stringResource(R.string.phone_section_title), null))
+    }.filter { it.first !in hidden }.distinctBy { it.first }
+    val byKey = all.associateBy { it.first }
+    fun save(keys: List<String>) { chosen = keys; settings.barApps = keys }
+    Section(stringResource(R.string.bar_section)) {
+        Choices(stringResource(R.string.bar_recents), (0..4).map { "$it" to "$it" }, "$recents") {
+            recents = it.toInt(); settings.barRecents = recents
+        }
+        AppGroup(stringResource(R.string.bar_chosen, chosen.size))
+        val shown = chosen.filter { it in byKey }
+        shown.forEachIndexed { i, key ->
+            val (_, label, icon) = byKey.getValue(key)
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (icon != null) Image(icon.asImageBitmap(), null, Modifier.size(32.dp).clip(CircleShape))
+                else Box(Modifier.size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer))
+                Spacer(Modifier.width(12.dp))
+                Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                IconButton(onClick = { save(shown.toMutableList().apply { add(i - 1, removeAt(i)) }) }, enabled = i > 0) {
+                    Icon(Icons.Rounded.KeyboardArrowUp, stringResource(R.string.common_up))
+                }
+                IconButton(onClick = { save(shown.toMutableList().apply { add(i + 1, removeAt(i)) }) }, enabled = i < shown.lastIndex) {
+                    Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.common_down))
+                }
+                androidx.compose.material3.Checkbox(true, { save(shown - key) })
+            }
+        }
+        AppGroup(stringResource(R.string.bar_add))
+        all.filter { it.first !in shown }.forEach { (key, label, icon) ->
+            AppRow(icon, label, "", false) { on -> if (on) save(shown + key) }
+        }
+        androidx.compose.material3.TextButton(onClick = { settings.barApps = null; chosen = default }) {
+            Text(stringResource(R.string.bar_reset))
+        }
     }
 }
 

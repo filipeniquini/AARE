@@ -48,13 +48,14 @@ object PhoneApps {
     private const val TABLET_SW_DP = 600
 
     /** Apps opened full screen from the car's grid. */
-    val full = PhoneAppHost("apps")
+    val full = PhoneAppHost("apps", 0)
 
     /** The navigation app in the GTS home screen's big card (Google Maps by default). */
-    val card = PhoneAppHost("card")
+    val card = PhoneAppHost("card", 1)
 
     /** The car is gone: both displays and their helpers go. */
-    fun release() { full.release(); card.release() }
+    /** The car is gone: both displays close; [keep] (video apps) move to the phone's screen instead of closing. */
+    fun release(keep: Set<String> = emptySet()) { full.release(keep); card.release() }
 
     // ---------------------------------------------------------------- the phone's apps
 
@@ -105,19 +106,19 @@ object PhoneApps {
     )
     private val NAVIGATION = setOf("com.google.android.apps.maps", "com.waze", "app.comaps.google", "app.organicmaps", "com.here.app.maps", "com.sygic.aura")
     private val MUSIC = setOf("com.spotify.music", "com.google.android.apps.youtube.music", "deezer.android.app", "com.amazon.mp3", "com.apple.android.music")
+    /** Music apps that also play videos (Spotify's podcasts and clips, YouTube Music's clips). */
+    val VIDEO_MUSIC = setOf("com.spotify.music", "com.google.android.apps.youtube.music")
     private val VIDEO = setOf("com.google.android.youtube", "com.netflix.mediaclient", "com.amazon.avod.thirdpartyclient", "com.disney.disneyplus", "com.hbo.hbonow", "com.globo.globotv")
 }
 
 /**
- * One virtual display for phone apps, with its own Shizuku helper process: [PhoneApps.full] for
- * apps full screen, [PhoneApps.card] for the navigation app in the GTS home screen's big card,
- * so both can show at once.
+ * One virtual display for phone apps: [PhoneApps.full] for apps full screen, [PhoneApps.card] for
+ * the navigation app in the GTS home screen's big card, so both can show at once. Both live in
+ * one Shizuku helper process ([ShellDisplayLink]), each in its [slot].
  */
-class PhoneAppHost(private val name: String) {
+class PhoneAppHost(private val name: String, private val slot: Int) {
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "aare-phone-apps-$name") }
     @Volatile private var service: IShellDisplay? = null
-    private var connection: ServiceConnection? = null
-    private var args: Shizuku.UserServiceArgs? = null
     @Volatile private var displayId = -1
     @Volatile private var size = Triple(0, 0, 0)
 
@@ -128,6 +129,9 @@ class PhoneAppHost(private val name: String) {
     
     /** The surface the display draws into now (the newest view showing it). */
     @Volatile private var shownIn: Surface? = null
+
+    /** The display's size in pixels, null before it exists. */
+    val currentSize: Pair<Int, Int>? get() = if (displayId >= 0) size.first to size.second else null
 
     /** The display's density, 0 before it exists. */
     val currentDpi: Int get() = if (displayId >= 0) size.third else 0
@@ -144,21 +148,21 @@ class PhoneAppHost(private val name: String) {
             // reloaded some resources: YouTube's icons shrank but its layout stayed (2026-11-08).
             if (displayId >= 0 && size.third != dpi) {
                 DiagLog.add("phone apps ($name): size changed to ${dpi}dpi, reopening the display")
-                s.release()
+                s.release(slot)
                 displayId = -1
             }
             val fresh = displayId < 0
             if (displayId < 0) {
-                displayId = s.create(surface, width, height, dpi)
+                displayId = s.create(slot, surface, width, height, dpi)
                 size = Triple(width, height, dpi)
                 _ready.value = displayId >= 0
                 DiagLog.add(if (displayId >= 0) "phone apps ($name): display $displayId ${width}x$height ${dpi}dpi" else "phone apps ($name): can't create the display")
             } else {
-                s.setSurface(surface)
+                s.setSurface(slot, surface)
                 // Same density, another size (the card going full screen, the car's insets): resizing
                 // is enough, and the apps keep running (they get a configuration change).
                 if (size != Triple(width, height, dpi)) {
-                    s.resize(width, height, dpi)
+                    s.resize(slot, width, height, dpi)
                     DiagLog.add("phone apps ($name): resized to ${width}x$height")
                     size = Triple(width, height, dpi)
                 }
@@ -179,12 +183,12 @@ class PhoneAppHost(private val name: String) {
     fun detach(surface: Surface? = null) = worker.execute {
         if (surface != null && surface !== shownIn) return@execute
         shownIn = null
-        runCatching { service?.setSurface(null) }
+        runCatching { service?.setSurface(slot, null) }
     }
 
     /** Opens [app] on the display (after [attach]). */
     fun open(app: ComponentName) = worker.execute {
-        val ok = runCatching { service?.launch(app.flattenToString()) }.getOrNull() == true
+        val ok = runCatching { service?.launch(slot, app.flattenToString()) }.getOrNull() == true
         if (!ok) DiagLog.add("phone apps ($name): couldn't open ${app.packageName}")
     }
 
@@ -209,32 +213,66 @@ class PhoneAppHost(private val name: String) {
         } }
         val fresh = MotionEvent.obtain(gestureDown, now, event.action, n, props, coords, 0, 0, 1f, 1f, 0, 0,
             android.view.InputDevice.SOURCE_TOUCHSCREEN, 0)
-        worker.execute { runCatching { service?.touch(fresh) }; fresh.recycle() }
+        worker.execute { runCatching { service?.touch(slot, fresh) }; fresh.recycle() }
     }
 
-    fun back() = worker.execute { runCatching { service?.key(android.view.KeyEvent.KEYCODE_BACK) } }
+    fun back() = worker.execute { runCatching { service?.key(slot, android.view.KeyEvent.KEYCODE_BACK) } }
 
     /** The package in front on the display, or null (blocking: off the main thread). */
-    fun topPackage(): String? = runCatching { service?.topPackage() }.getOrNull()
+    fun topPackage(): String? = runCatching { service?.topPackage(slot) }.getOrNull()
 
-    /** The car is gone: close the display (its apps close too) and the helper process. */
-    fun release() = worker.execute {
-        runCatching { service?.release() }
+    /** Whether [packageName] shows full screen on the display, its bars hidden (blocking: off the main thread). */
+    fun hidesBars(packageName: String): Boolean = runCatching { service?.hidesBars(slot, packageName) }.getOrNull() == true
+
+    /** The car is gone: close the display (its apps close too), and the helper once no display needs it. */
+    fun release(keep: Set<String> = emptySet()) = worker.execute {
+        // A video playing here keeps its place: closed with the display, YouTube started over
+        // from its home screen on the next drive and play did nothing (2026-11-09).
+        if (keep.isNotEmpty()) runCatching { service?.keepTasks(slot, keep.toTypedArray()) }.getOrNull()?.let { n ->
+            if (n > 0) DiagLog.add("phone apps ($name): $n video app(s) moved to the phone's screen, to go on next time")
+        }
+        runCatching { service?.release(slot) }
         displayId = -1
         _ready.value = null
-        val a = args; val c = connection
-        if (a != null && c != null) runCatching { Shizuku.unbindUserService(a, c, true) }
-        service = null; connection = null; args = null
+        service = null
+        ShellDisplayLink.done(slot)
     }
 
     private fun bind(context: Context): IShellDisplay? {
         service?.takeIf { it.asBinder().pingBinder() }?.let { return it }
+        return ShellDisplayLink.get(context, slot) {
+            // The helper went away: this display with it.
+            service = null
+            displayId = -1
+            _ready.value = null
+        }.also { service = it }
+    }
+
+    private companion object { const val TAG = "AarePhoneApps" }
+}
+
+/**
+ * The one Shizuku helper process ([ShellDisplayService]) that holds every phone-apps display, by
+ * slot: bound when the first display needs it, let go when none does. One process instead of one
+ * per display: each held about 100-125 MB (measured 2026-11-09).
+ */
+private object ShellDisplayLink {
+    private const val TAG = "AarePhoneApps"
+    private val lock = Any()
+    @Volatile private var service: IShellDisplay? = null
+    private var connection: ServiceConnection? = null
+    private var args: Shizuku.UserServiceArgs? = null
+    private val users = HashMap<Int, () -> Unit>()
+
+    /** The helper for [slot], bound if needed (blocking: off the main thread); [lost] runs if it dies. */
+    fun get(context: Context, slot: Int, lost: () -> Unit): IShellDisplay? = synchronized(lock) {
+        service?.takeIf { it.asBinder().pingBinder() }?.let { users[slot] = lost; return it }
         if (!PhoneApps.available()) return null
         val latch = CountDownLatch(1)
         val a = Shizuku.UserServiceArgs(ComponentName(context.packageName, ShellDisplayService::class.java.name))
             .daemon(false)
-            .processNameSuffix(name)
-            .tag(name)
+            .processNameSuffix("apps")
+            .tag("apps")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
         val c = object : ServiceConnection {
@@ -244,16 +282,23 @@ class PhoneAppHost(private val name: String) {
             }
             override fun onServiceDisconnected(name: ComponentName?) {
                 service = null
-                displayId = -1
-                _ready.value = null
+                val gone = synchronized(lock) { users.values.toList() }
+                gone.forEach { it() }
             }
         }
         runCatching { Shizuku.bindUserService(a, c) }.onFailure { Log.w(TAG, "Shizuku bind", it); return null }
         args = a; connection = c
         latch.await(5, TimeUnit.SECONDS)
-        return service
+        if (service != null) users[slot] = lost
+        service
     }
 
-    private companion object { const val TAG = "AarePhoneApps" }
+    /** [slot] needs the helper no more: unbound (and the process ends) once no slot does. */
+    fun done(slot: Int) = synchronized(lock) {
+        users.remove(slot)
+        if (users.isNotEmpty()) return
+        val a = args; val c = connection
+        if (a != null && c != null) runCatching { Shizuku.unbindUserService(a, c, true) }
+        service = null; connection = null; args = null
+    }
 }
-

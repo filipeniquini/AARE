@@ -28,7 +28,10 @@ import kotlin.system.exitProcess
  */
 class ShellDisplayService : IShellDisplay.Stub {
     private val context: Context?
-    @Volatile private var display: VirtualDisplay? = null
+    /** The displays by slot (0: apps full screen, 1: the map card). */
+    private val displays = java.util.concurrent.ConcurrentHashMap<Int, VirtualDisplay>()
+
+    private fun idOf(slot: Int): Int? = displays[slot]?.display?.displayId
 
     constructor() : this(null)
 
@@ -37,12 +40,12 @@ class ShellDisplayService : IShellDisplay.Stub {
         this.context = context
     }
 
-    override fun create(surface: Surface?, width: Int, height: Int, densityDpi: Int): Int {
-        release()
+    override fun create(slot: Int, surface: Surface?, width: Int, height: Int, densityDpi: Int): Int {
+        release(slot)
         return try {
             val dm = displayManager()
-            val d = dm.createVirtualDisplay(NAME, width, height, densityDpi, surface, FLAGS)
-            display = d
+            val d = dm.createVirtualDisplay("$NAME $slot", width, height, densityDpi, surface, FLAGS)
+            displays[slot] = d
             keyboardHere(d.display.displayId)
             d.display.displayId
         } catch (e: Exception) {
@@ -51,24 +54,24 @@ class ShellDisplayService : IShellDisplay.Stub {
         }
     }
 
-    override fun setSurface(surface: Surface?) {
-        display?.surface = surface
+    override fun setSurface(slot: Int, surface: Surface?) {
+        displays[slot]?.surface = surface
     }
 
-    override fun resize(width: Int, height: Int, densityDpi: Int) {
-        display?.resize(width, height, densityDpi)
+    override fun resize(slot: Int, width: Int, height: Int, densityDpi: Int) {
+        displays[slot]?.resize(width, height, densityDpi)
     }
 
-    override fun launch(component: String): Boolean {
-        val id = display?.display?.displayId ?: return false
+    override fun launch(slot: Int, component: String): Boolean {
+        val id = idOf(slot) ?: return false
         // Fixed program, the component as one argument: no shell parsing.
         return run("am", "start", "--display", id.toString(), "-a", "android.intent.action.MAIN",
             "-c", "android.intent.category.LAUNCHER", "-f", "0x10200000", "-n", component)
     }
 
-    override fun touch(event: MotionEvent?) {
+    override fun touch(slot: Int, event: MotionEvent?) {
         val e = event ?: return
-        val id = display?.display?.displayId ?: return
+        val id = idOf(slot) ?: return
         e.source = InputDevice.SOURCE_TOUCHSCREEN
         if (e.actionMasked == MotionEvent.ACTION_DOWN) wakeIfAsleep(id)
         inject(e, id)
@@ -108,29 +111,69 @@ class ShellDisplayService : IShellDisplay.Stub {
         HiddenApiBypass.invoke(pm.javaClass, pm, "isInteractive") as Boolean
     }.getOrNull()
 
-    override fun key(keyCode: Int) {
-        val id = display?.display?.displayId ?: return
+    override fun key(slot: Int, keyCode: Int) {
+        val id = idOf(slot) ?: return
         val t = SystemClock.uptimeMillis()
         for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
             inject(KeyEvent(t, t, action, keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD), id)
         }
     }
 
-    override fun topPackage(): String? {
-        val id = display?.display?.displayId ?: return null
+    override fun topPackage(slot: Int): String? {
+        val id = idOf(slot) ?: return null
         // "Display #<id>" then its activities, top first: the first record names the package.
         val out = output("dumpsys", "activity", "activities") ?: return null
         val section = out.substringAfter("Display #$id ", "").substringBefore("Display #")
         return Regex("ActivityRecord\\{\\S+ u\\d+ ([\\w.]+)/").find(section)?.groupValues?.get(1)
     }
 
-    override fun release() {
-        display?.release()
-        display = null
+    override fun hidesBars(slot: Int, packageName: String?): Boolean {
+        val pkg = packageName?.takeIf { Regex("[A-Za-z][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+").matches(it) } ?: return false
+        val id = idOf(slot) ?: return false
+        val onThis = Regex("""mDisplayId=$id\b""")
+        // Only that app's windows (a name filter keeps the dump small), then the visible one on this display.
+        val out = output("dumpsys", "window", pkg) ?: return false
+        return out.split(Regex("""\n\s*Window #""")).any { w ->
+            onThis.containsMatchIn(w) && w.contains("mViewVisibility=0x0") && immersive(w)
+        }
+    }
+
+    /**
+     * A window that asked for the system bars hidden. Android 17 lists them under "Requested
+     * non-default-visibility types" (the status bar, normally shown, among them: hidden) and in
+     * the legacy "vsysui=... FULLSCREEN" (YouTube full screen, 2026-11-09); older versions print
+     * "mRequestedVisibleTypes=" (the bars still wanted) or the FULLSCREEN window flag.
+     */
+    private fun immersive(window: String): Boolean {
+        fun line(key: String) = Regex(Regex.escape(key) + """([^\n]*)""").find(window)?.groupValues?.get(1)
+        line("Requested non-default-visibility types:")?.let { if (it.contains("statusBars")) return true }
+        line("mRequestedVisibleTypes=")?.let { if (!it.contains("statusBars")) return true }
+        val fullscreen = Regex("""(^|\s)FULLSCREEN(\s|$)""")
+        return listOfNotNull(line("vsysui="), line(" fl=")).any { fullscreen.containsMatchIn(it) }
+    }
+
+    override fun keepTasks(slot: Int, packages: Array<out String>?): Int {
+        val id = idOf(slot) ?: return 0
+        val wanted = packages?.filter { Regex("[A-Za-z][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+").matches(it) }?.toSet() ?: return 0
+        if (wanted.isEmpty()) return 0
+        // "RootTask id=<root> ... displayId=<display>" then its tasks, "taskId=<n>: <package>/<activity>".
+        val out = output("am", "stack", "list") ?: return 0
+        var moved = 0
+        for (block in out.split(Regex("""\n(?=RootTask id=)"""))) {
+            val root = Regex("""RootTask id=(\d+) .*?displayId=(\d+)""").find(block) ?: continue
+            if (root.groupValues[2].toInt() != id) continue
+            val pkg = Regex("""taskId=\d+: ([\w.]+)/""").find(block)?.groupValues?.get(1) ?: continue
+            if (pkg in wanted && run("am", "display", "move-stack", root.groupValues[1], "0")) moved++
+        }
+        return moved
+    }
+
+    override fun release(slot: Int) {
+        displays.remove(slot)?.release()
     }
 
     override fun destroy() {
-        release()
+        displays.keys.toList().forEach(::release)
         exitProcess(0)
     }
 
