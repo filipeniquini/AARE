@@ -243,7 +243,7 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
     // settings). The media and navigation slots follow the apps in use.
     val gts = LocalGtsStyle.current
     val custom = state.barApps
-    val chosen: List<Pair<CarAppEntry?, ImageVector>> = custom?.mapNotNull { key ->
+    var chosen: List<Pair<CarAppEntry?, ImageVector>> = custom?.mapNotNull { key ->
         when (key) {
             net.prototux.aare.Settings.BAR_MEDIA -> media to Icons.Rounded.MusicNote
             net.prototux.aare.Settings.BAR_NAV -> nav to Icons.Rounded.Map
@@ -255,6 +255,8 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
         phone?.let { it to Icons.Rounded.Call },
         settings?.takeIf { !tighterBar }?.let { it to Icons.Rounded.Settings },
     )
+    // Each app once: "the media app in use" may be one also pinned (YouTube twice, 2026-11-09).
+    chosen = chosen.distinctBy { it.first?.id ?: it.second.name }
     // Like Android Auto's taskbar: the apps used last, besides those (after the media app by default).
     val fixed = chosen.mapNotNullTo(HashSet()) { it.first?.id }
     val recent = state.recentAppIds.filter { it !in fixed }.mapNotNull(state::app)
