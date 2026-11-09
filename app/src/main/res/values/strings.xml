@@ -383,6 +383,9 @@
     <string name="obd_simulated_subtitle">A pretend car that drives a loop, to try the card without the car</string>
     <string name="obd_hint">The adapter takes one app at a time: AARE holds it only while connected to the car. Applies at the next connection.</string>
     <string name="obd_searching">Looking for the OBD2 adapter</string>
+    <string name="obd_gave_up">No OBD2 adapter, trying every minute</string>
+    <string name="obd_user_off">V-LINK disconnected</string>
+    <string name="obd_connect">Connect the V-LINK</string>
+    <string name="obd_disconnect">Disconnect the V-LINK</string>
     <string name="obd_no_car">Adapter found, the car isn\'t answering (ignition off?)</string>
-    <string name="obd_gave_up">No OBD2 adapter</string>
 </resources>

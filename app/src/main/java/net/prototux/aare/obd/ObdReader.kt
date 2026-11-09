@@ -14,11 +14,13 @@ import java.io.IOException
  *
  * The V-LINK takes one connection at a time: it's held only between [start] and [stop] (the car
  * session), so the user's other apps can use it the rest of the time. With no adapter around
- * (left at home, unpaired, off) it tries [ATTEMPTS] times and gives up until the next session,
- * rather than looping. Ported from the user's dongle launcher (`ObdLeitor.java`).
+ * (left at home, unpaired, off) it tries [ATTEMPTS] times, then once every [SLOW_RETRY_MS]: a
+ * V-LINK switched on later in the drive is still found (2026-11-09, it was only tried at the
+ * start). The driver can also [connectNow] or [disconnect] it from the car card.
+ * Ported from the user's dongle launcher (`ObdLeitor.java`).
  */
 object ObdReader {
-    enum class State { OFF, SEARCHING, CONNECTED, NO_CAR, GAVE_UP }
+    enum class State { OFF, SEARCHING, CONNECTED, NO_CAR, GAVE_UP, USER_OFF }
 
     data class Status(val state: State, val adapter: String = "", val detail: String = "")
 
@@ -35,6 +37,8 @@ object ObdReader {
     private const val ATTEMPTS = 4
     private const val RETRY_MS = 8_000L
     private const val NO_CAR_RETRY_MS = 15_000L
+    /** After [ATTEMPTS] misses, one more try this often (a Bluetooth connection attempt costs little). */
+    private const val SLOW_RETRY_MS = 60_000L
     /** Never spin without a pause, even when the adapter answers instantly. */
     private const val MIN_ROUND_MS = 50L
     /** At most this often to the screen (10 a second). */
@@ -44,12 +48,17 @@ object ObdReader {
     @Volatile private var link: ObdLink? = null
     private var thread: Thread? = null
     private var trip: Trip? = null
+    /** What [start] was given, for the driver's connect button. */
+    private var appContext: Context? = null
+    private var simulated = false
 
     /** Starts reading (the fake adapter when [simulated]); a running reader restarts. */
     @Synchronized
     fun start(context: Context, simulated: Boolean) {
         stop(context)
         val app = context.applicationContext
+        appContext = app
+        this.simulated = simulated
         if (!simulated && app.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             status(State.GAVE_UP, detail = "Bluetooth permission missing")
             return
@@ -76,22 +85,50 @@ object ObdReader {
         _status.value = Status(State.OFF)
     }
 
+    /**
+     * The driver's connect button: tries right away (waiting between attempts, given up, or
+     * disconnected by the driver). Does nothing before the first [start].
+     */
+    @Synchronized
+    fun connectNow() {
+        val app = appContext ?: return
+        when (_status.value.state) {
+            State.CONNECTED -> return
+            State.SEARCHING, State.GAVE_UP, State.NO_CAR -> if (thread != null) {
+                log("OBD2: connect asked by the driver, trying now")
+                // Wakes the reader from its wait between attempts.
+                thread?.interrupt()
+                return
+            }
+            else -> Unit
+        }
+        log("OBD2: connect asked by the driver")
+        start(app, simulated)
+    }
+
+    /** The driver's disconnect button: lets go of the adapter until they connect again (or the next drive). */
+    @Synchronized
+    fun disconnect() {
+        val app = appContext ?: return
+        log("OBD2: disconnected by the driver")
+        stop(app)
+        _status.value = Status(State.USER_OFF)
+    }
+
     private fun alive(g: Int) = g == generation
 
     private fun run(context: Context, simulated: Boolean, trip: Trip, g: Int) {
         var failures = 0
         while (alive(g)) {
-            status(State.SEARCHING, detail = "${failures + 1}/$ATTEMPTS", g = g)
+            if (failures < ATTEMPTS) status(State.SEARCHING, detail = "${failures + 1}/$ATTEMPTS", g = g)
             val x = if (simulated) FakeObdLink() else connect(context)
             if (x == null) {
-                if (++failures >= ATTEMPTS) {
-                    log("no OBD2 adapter answered after $ATTEMPTS attempts, giving up until the next connection")
-                    status(State.GAVE_UP, g = g)
-                    return
-                }
-                sleep(RETRY_MS)
+                if (++failures == ATTEMPTS) log("no OBD2 adapter answered after $ATTEMPTS attempts, trying again every ${SLOW_RETRY_MS / 1000} s")
+                if (failures >= ATTEMPTS) status(State.GAVE_UP, g = g)
+                sleep(if (failures >= ATTEMPTS) SLOW_RETRY_MS else RETRY_MS)
                 continue
             }
+            if (failures >= ATTEMPTS) log("OBD2: adapter found on a later try")
             failures = 0
             link = x
             try {

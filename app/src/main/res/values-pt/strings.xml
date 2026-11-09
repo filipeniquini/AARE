@@ -382,6 +382,9 @@
     <string name="obd_simulated_subtitle">Um carro de mentira que anda em ciclo, para testar o cartão sem o carro</string>
     <string name="obd_hint">O adaptador aceita uma aplicação de cada vez: o AARE só o usa enquanto está ligado ao carro. Vale na próxima ligação.</string>
     <string name="obd_searching">À procura do adaptador OBD2</string>
+    <string name="obd_gave_up">Sem adaptador OBD2, nova tentativa a cada minuto</string>
+    <string name="obd_user_off">V-LINK desligado</string>
+    <string name="obd_connect">Ligar o V-LINK</string>
+    <string name="obd_disconnect">Desligar o V-LINK</string>
     <string name="obd_no_car">Adaptador encontrado, o carro não responde (ignição desligada?)</string>
-    <string name="obd_gave_up">Sem adaptador OBD2</string>
 </resources>

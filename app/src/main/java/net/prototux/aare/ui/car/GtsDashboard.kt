@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BluetoothDisabled
+import androidx.compose.material.icons.rounded.BluetoothSearching
 import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -200,11 +202,23 @@ private fun ObdStatusLabel(status: ObdReader.Status, s: Scale, modifier: Modifie
         ObdReader.State.SEARCHING -> stringResource(R.string.obd_searching) to false
         ObdReader.State.NO_CAR -> stringResource(R.string.obd_no_car) to false
         ObdReader.State.GAVE_UP -> stringResource(R.string.obd_gave_up) to false
+        ObdReader.State.USER_OFF -> stringResource(R.string.obd_user_off) to false
     }
-    Row(modifier.width(s.dp(170f)), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+    // The driver's button: disconnect while it reads or looks for it, connect (now) otherwise.
+    val on = status.state == ObdReader.State.CONNECTED || status.state == ObdReader.State.SEARCHING || status.state == ObdReader.State.NO_CAR
+    val offer = stringResource(if (on) R.string.obd_disconnect else R.string.obd_connect)
+    Row(modifier.width(s.dp(200f)), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(s.dp(8f)).clip(CircleShape).background(if (ok) Color(0xFF4CD964) else MaterialTheme.colorScheme.onSurfaceVariant))
         Spacer(Modifier.width(s.dp(6f)))
-        Text(text, fontSize = s.sp(12f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(text, fontSize = s.sp(12f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.width(s.dp(8f)))
+        val size = s.dp(34f)
+        Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .clickable { if (on) ObdReader.disconnect() else ObdReader.connectNow() }, contentAlignment = Alignment.Center) {
+            Icon(if (on) Icons.Rounded.BluetoothDisabled else Icons.Rounded.BluetoothSearching, offer,
+                tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(size * 0.6f))
+        }
     }
 }
 
