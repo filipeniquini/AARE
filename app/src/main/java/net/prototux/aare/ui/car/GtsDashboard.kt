@@ -269,7 +269,9 @@ private fun today(): String {
         }
     }
     val locale = LocalContext.current.resources.configuration.locales[0] ?: Locale.getDefault()
-    val text = DateFormat.format(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), now).toString()
+    // The names in the same language as the pattern ("Wednesday, 11 November", not "11 de November"
+    // with AARE set to another language than the phone, 2026-11-11).
+    val text = java.text.SimpleDateFormat(DateFormat.getBestDateTimePattern(locale, "EEEEdMMMM"), locale).format(java.util.Date(now))
     return text.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
 }
 
