@@ -152,7 +152,7 @@ class CarSession(
             navBridge?.updatePhone(g)
         }
         runtime.start()
-        // The car's own readings for the GTS car card, from the OBD2 adapter (V-LINK) while connected.
+        // The car's own readings for the GTS car card, from the OBD2 adapter while connected.
         holdMusicUntilCarAudio()
         net.prototux.aare.obd.GpsTrip.start()
         if (settings.obdEnabled) net.prototux.aare.obd.ObdReader.start(context, settings.obdSimulated)

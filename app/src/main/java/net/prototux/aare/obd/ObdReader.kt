@@ -12,10 +12,10 @@ import java.io.IOException
 /**
  * Reads the OBD2 adapter continuously while the car is connected, for the GTS car card.
  *
- * The V-LINK takes one connection at a time: it's held only between [start] and [stop] (the car
+ * An OBD2 adapter takes one connection at a time: it's held only between [start] and [stop] (the car
  * session), so the user's other apps can use it the rest of the time. With no adapter around
  * (left at home, unpaired, off) it tries [ATTEMPTS] times, then once every [SLOW_RETRY_MS]: a
- * V-LINK switched on later in the drive is still found (2026-11-09, it was only tried at the
+ * adapter switched on later in the drive is still found (2026-11-09, it was only tried at the
  * start). The driver can also [connectNow] or [disconnect] it from the car card.
  * Ported from the user's dongle launcher (`ObdLeitor.java`).
  */
@@ -121,7 +121,7 @@ object ObdReader {
         var failures = 0
         while (alive(g)) {
             if (failures < ATTEMPTS) status(State.SEARCHING, detail = "${failures + 1}/$ATTEMPTS", g = g)
-            val x = if (simulated) FakeObdLink() else connect(context)
+            val x = if (simulated) FakeObdLink(context.getString(net.prototux.aare.R.string.obd_simulated_name)) else connect(context)
             if (x == null) {
                 if (++failures == ATTEMPTS) log("no OBD2 adapter answered after $ATTEMPTS attempts, trying again every ${SLOW_RETRY_MS / 1000} s")
                 if (failures >= ATTEMPTS) status(State.GAVE_UP, g = g)

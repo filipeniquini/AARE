@@ -205,7 +205,7 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
     }
 }
 
-/** Where the adapter stands, small and only when it isn't simply reading: "V-LINK" with a dot, or why not. */
+/** Where the adapter stands, small and only when it isn't simply reading: the adapter's name with a dot, or why not. */
 @Composable
 private fun ObdStatusLabel(status: ObdReader.Status, s: Scale, modifier: Modifier) {
     val (text, ok) = when (status.state) {

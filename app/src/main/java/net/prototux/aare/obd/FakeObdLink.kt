@@ -5,8 +5,7 @@ package net.prototux.aare.obd
  * cruising, braking, standing). For trying the car card without the car. Ported from the user's
  * dongle launcher (`ObdFalso.java`).
  */
-class FakeObdLink(private val clock: () -> Long = System::currentTimeMillis, private val delayMs: Long = 40) : ObdLink {
-    override val name = "Simulação"
+class FakeObdLink(override val name: String = "Simulator", private val clock: () -> Long = System::currentTimeMillis, private val delayMs: Long = 40) : ObdLink {
     private val start = clock()
     private val has = Elm327.READ.toSet()
 

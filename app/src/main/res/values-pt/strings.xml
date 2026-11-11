@@ -50,6 +50,11 @@
     <string name="setup_section_connecting">A ligar</string>
     <string name="setup_toggle_wireless_title">Sem fios</string>
     <string name="setup_toggle_wireless_subtitle">Ligar a carros emparelhados por Wi-Fi quando entram no alcance do Bluetooth</string>
+    <string name="setup_page_language_subtitle">O AARE em outro idioma que não o do celular</string>
+    <string name="setup_language_old_android">Precisa do Android 13 ou mais novo: o AARE segue o idioma do celular.</string>
+    <string name="setup_choice_language">Idioma</string>
+    <string name="setup_language_auto">Idioma do celular</string>
+    <string name="setup_language_hint">Para todo o AARE, inclusive a tela do carro (na próxima conexão, se estiver conectado agora).</string>
     <string name="setup_toggle_resume_music_title">Tocar ao conectar</string>
     <string name="setup_toggle_resume_music_subtitle">Ao conectar no carro, voltar a tocar o que o celular tocou por último, como no Android Auto</string>
     <string name="setup_section_location">Localização</string>
@@ -306,6 +311,10 @@
     <!-- phone: car phone screen (recents, contacts, keypad) -->
     <string name="phone_tab_favorites">Favoritos</string>
     <string name="phone_no_favorites">Sem favoritos: marque contatos com a estrela no app Contatos do celular</string>
+    <string name="phone_call_missed">Chamada perdida</string>
+    <string name="phone_call_outgoing">Chamada feita</string>
+    <string name="phone_call_incoming">Chamada recebida</string>
+    <string name="obd_simulated_name">Simulação</string>
     <string name="phone_tab_recents">Recentes</string>
     <string name="phone_tab_contacts">Contactos</string>
     <string name="phone_tab_keypad">Teclado</string>
@@ -395,14 +404,14 @@
     <string name="phone_apps_kind_other">Aplicação do telemóvel</string>
     <string name="obd_section">Dados do carro (OBD2)</string>
     <string name="obd_toggle_title">Ler o adaptador OBD2</string>
-    <string name="obd_toggle_subtitle">Velocidade, rotação, temperaturas e combustível de um adaptador Bluetooth emparelhado (V-LINK, ELM327) para o cartão do carro GTS. Só leitura.</string>
+    <string name="obd_toggle_subtitle">Velocidade, rotação, temperaturas e combustível de um adaptador Bluetooth emparelhado (ELM327 e compatíveis) para o cartão do carro GTS. Só leitura.</string>
     <string name="obd_simulated_title">Adaptador de simulação</string>
     <string name="obd_simulated_subtitle">Um carro de mentira que anda em ciclo, para testar o cartão sem o carro</string>
     <string name="obd_hint">O adaptador aceita uma aplicação de cada vez: o AARE só o usa enquanto está ligado ao carro. Vale na próxima ligação.</string>
     <string name="obd_searching">À procura do adaptador OBD2</string>
     <string name="obd_gave_up">Sem adaptador OBD2, nova tentativa a cada minuto</string>
-    <string name="obd_user_off">V-LINK desligado</string>
-    <string name="obd_connect">Ligar o V-LINK</string>
-    <string name="obd_disconnect">Desligar o V-LINK</string>
+    <string name="obd_user_off">Adaptador OBD2 desligado</string>
+    <string name="obd_connect">Conectar o adaptador OBD2</string>
+    <string name="obd_disconnect">Desconectar o adaptador OBD2</string>
     <string name="obd_no_car">Adaptador encontrado, o carro não responde (ignição desligada?)</string>
 </resources>

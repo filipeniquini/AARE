@@ -281,8 +281,15 @@ private fun CalleeRow(c: Callee, avatar: Boolean, onCall: (Callee) -> Unit) {
                 CallLog.Calls.INCOMING_TYPE -> Icons.AutoMirrored.Rounded.CallReceived
                 else -> Icons.Rounded.Person
             }
+            // Read out by screen readers: the arrow alone says nothing to them.
+            val kind = when (c.type) {
+                CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> stringResource(R.string.phone_call_missed)
+                CallLog.Calls.OUTGOING_TYPE -> stringResource(R.string.phone_call_outgoing)
+                CallLog.Calls.INCOMING_TYPE -> stringResource(R.string.phone_call_incoming)
+                else -> null
+            }
             Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
+                Icon(icon, kind, tint = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
         Spacer(Modifier.width(16.dp))

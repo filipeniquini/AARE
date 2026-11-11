@@ -645,8 +645,28 @@ class CarRuntime(
                 }
                 return@launch
             }
-            val app = media.apps.value.firstOrNull { it.packageName == last }
-            if (app == null) { DiagLog.add("resume: $last is closed and isn't a media app, nothing to start"); return@launch }
+            // A video app (YouTube) that was closed has nothing queued: connecting to it as a media
+            // app left it in an error and the card's play did nothing (2026-11-11 test).
+            val isVideo = PhoneApps.kind(last, runCatching { context.packageManager.getApplicationInfo(last, 0).category }.getOrDefault(-1)) == PhoneApps.Kind.VIDEO
+            if (!isVideo) {
+                // As Android Auto does: a play key to the phone's last media app, which Android
+                // wakes up even when it was closed (media button resumption). Spotify refuses
+                // AARE's media connection, so the key is its only way back (2026-11-11 test).
+                val audio = context.getSystemService(android.media.AudioManager::class.java)
+                for (action in intArrayOf(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.ACTION_UP)) {
+                    runCatching { audio.dispatchMediaKeyEvent(android.view.KeyEvent(action, android.view.KeyEvent.KEYCODE_MEDIA_PLAY)) }
+                }
+                kotlinx.coroutines.delay(5_000)
+                val p = media.playback.value
+                if (p?.playing == true) {
+                    DiagLog.add("resume: ${p.packageName} plays again (play key)")
+                    ui.activeMediaAppId = mediaEntryId(p.packageName)
+                    settings.lastMediaApp = p.packageName
+                    return@launch
+                }
+            }
+            val app = media.apps.value.firstOrNull { it.packageName == last }?.takeUnless { isVideo }
+            if (app == null) { DiagLog.add("resume: $last is closed and has nothing to play from here, left as it is"); return@launch }
             DiagLog.add("resume: $last plays again (connected as a media app)")
             media.select(app)
             ui.activeMediaAppId = mediaEntryId(last)

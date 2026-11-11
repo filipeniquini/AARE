@@ -50,6 +50,11 @@
     <string name="setup_section_connecting">Connecting</string>
     <string name="setup_toggle_wireless_title">Wireless</string>
     <string name="setup_toggle_wireless_subtitle">Connect to paired cars over Wi-Fi when they come into Bluetooth range</string>
+    <string name="setup_page_language_subtitle">AARE in another language than the phone</string>
+    <string name="setup_language_old_android">Needs Android 13 or later: AARE follows the phone language.</string>
+    <string name="setup_choice_language">Language</string>
+    <string name="setup_language_auto">Phone\'s language</string>
+    <string name="setup_language_hint">For all of AARE, the car screen included (from the next connection if it is on now).</string>
     <string name="setup_toggle_resume_music_title">Play on connect</string>
     <string name="setup_toggle_resume_music_subtitle">Start what the phone played last when the car connects, like Android Auto</string>
     <string name="setup_section_location">Location</string>
@@ -307,6 +312,10 @@
     <!-- phone: car phone screen (recents, contacts, keypad) -->
     <string name="phone_tab_favorites">Favourites</string>
     <string name="phone_no_favorites">No favourite contacts yet: star them in the Contacts app of the phone</string>
+    <string name="phone_call_missed">Missed call</string>
+    <string name="phone_call_outgoing">Outgoing call</string>
+    <string name="phone_call_incoming">Incoming call</string>
+    <string name="obd_simulated_name">Simulator</string>
     <string name="phone_tab_recents">Recents</string>
     <string name="phone_tab_contacts">Contacts</string>
     <string name="phone_tab_keypad">Keypad</string>
@@ -396,14 +405,14 @@
     <string name="phone_apps_kind_other">Phone app</string>
     <string name="obd_section">Car data (OBD2)</string>
     <string name="obd_toggle_title">Read the OBD2 adapter</string>
-    <string name="obd_toggle_subtitle">Speed, revs, temperatures and fuel from a paired Bluetooth adapter (V-LINK, ELM327) for the GTS car card. Read only.</string>
+    <string name="obd_toggle_subtitle">Speed, revs, temperatures and fuel from a paired Bluetooth adapter (ELM327 and compatible) for the GTS car card. Read only.</string>
     <string name="obd_simulated_title">Pretend adapter</string>
     <string name="obd_simulated_subtitle">A pretend car that drives a loop, to try the card without the car</string>
     <string name="obd_hint">The adapter takes one app at a time: AARE holds it only while connected to the car. Applies at the next connection.</string>
     <string name="obd_searching">Looking for the OBD2 adapter</string>
     <string name="obd_gave_up">No OBD2 adapter, trying every minute</string>
-    <string name="obd_user_off">V-LINK disconnected</string>
-    <string name="obd_connect">Connect the V-LINK</string>
-    <string name="obd_disconnect">Disconnect the V-LINK</string>
+    <string name="obd_user_off">OBD2 adapter disconnected</string>
+    <string name="obd_connect">Connect the OBD2 adapter</string>
+    <string name="obd_disconnect">Disconnect the OBD2 adapter</string>
     <string name="obd_no_car">Adapter found, the car isn\'t answering (ignition off?)</string>
 </resources>

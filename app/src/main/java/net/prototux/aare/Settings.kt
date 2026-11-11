@@ -173,7 +173,7 @@ class Settings(context: Context) {
         get() = prefs.getString("map_card_app", MAP_CARD_DEFAULT) ?: MAP_CARD_DEFAULT
         set(v) = prefs.edit { putString("map_card_app", v) }
 
-    /** Read the OBD2 adapter (the V-LINK) while connected, for the GTS car card. */
+    /** Read the OBD2 adapter (any ELM327-compatible one) while connected, for the GTS car card. */
     var obdEnabled: Boolean
         get() = prefs.getBoolean("obd_enabled", true)
         set(v) = prefs.edit { putBoolean("obd_enabled", v) }

@@ -1,5 +1,7 @@
 package net.prototux.aare.ui
 
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material3.DropdownMenu
 import android.Manifest
 import android.content.ComponentName
 import android.content.Context
@@ -160,6 +162,7 @@ private enum class Page(val titleRes: Int, val subtitleRes: Int, val icon: Image
     MESSAGES(R.string.msg_settings_title, R.string.msg_page_subtitle, Icons.Rounded.Forum),
     AUDIO(R.string.audio_settings_title, R.string.audio_page_subtitle, Icons.AutoMirrored.Rounded.VolumeUp),
     CONNECTION(R.string.setup_page_connection_title, R.string.setup_page_connection_subtitle, Icons.Rounded.Bluetooth),
+    LANGUAGE(R.string.setup_choice_language, R.string.setup_page_language_subtitle, Icons.Rounded.Translate),
     ADVANCED(R.string.setup_page_advanced_title, R.string.setup_page_advanced_subtitle, Icons.Rounded.Tune),
 }
 
@@ -217,6 +220,7 @@ private fun Home() {
                         Page.MESSAGES -> item { MessageSettings(settings, refresh) }
                         Page.AUDIO -> item { AudioSettings(settings, state, refresh) { refresh++ } }
                         Page.CONNECTION -> item { ConnectionSettings(settings) }
+                        Page.LANGUAGE -> item { LanguagePage() }
                         Page.ADVANCED -> {
                             item { HeadUnitServerSettings(settings) }
                             item { CertificatesCard(certs, state) }
@@ -726,6 +730,48 @@ private fun AudioSettings(settings: Settings, state: ProjectionService.State, re
 }
 
 private const val SHIZUKU_REQUEST = 42
+
+/** The languages AARE has (res/xml/locales_config.xml), by their tag. */
+private val APP_LANGUAGES = listOf("en", "pt", "ar", "cs", "da", "de", "es", "fi", "fr", "hu", "it", "nb", "nl", "pl", "ro", "ru", "sv", "uk", "vi", "zh")
+
+/**
+ * AARE's own language, apart from the phone's (2026-11-11), its own page on the home screen: the
+ * phone's per-app language, so the phone's settings show the same choice and everything in AARE
+ * follows, the car screen included. Android 13 and later; before that AARE follows the phone.
+ */
+@Composable
+private fun LanguagePage() {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+        Text(stringResource(R.string.setup_language_old_android), style = MaterialTheme.typography.bodyMedium)
+        return
+    }
+    val ctx = LocalContext.current
+    val manager = remember { ctx.getSystemService(android.app.LocaleManager::class.java) }
+    var current by remember { mutableStateOf(manager.applicationLocales.get(0)?.language) }
+    // Each language by its own name ("Português", "English"), so it can be found from any language.
+    fun name(tag: String) = java.util.Locale.forLanguageTag(tag).let { it.getDisplayName(it) }.replaceFirstChar { it.uppercase() }
+    fun pick(tag: String?) {
+        current = tag
+        // Android restarts AARE's screens in the new language by itself.
+        manager.applicationLocales = if (tag == null) android.os.LocaleList.getEmptyLocaleList() else android.os.LocaleList.forLanguageTags(tag)
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.setup_language_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainer)) {
+            LanguageRow(stringResource(R.string.setup_language_auto), current == null) { pick(null) }
+            for (tag in APP_LANGUAGES.sortedBy(::name)) LanguageRow(name(tag), current == tag) { pick(tag) }
+        }
+    }
+}
+
+@Composable
+private fun LanguageRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(12.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+    }
+}
 
 /** A labelled row of mutually exclusive options. */
 @Composable

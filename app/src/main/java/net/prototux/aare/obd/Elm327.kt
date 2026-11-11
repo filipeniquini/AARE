@@ -9,13 +9,13 @@ import java.io.IOException
 import java.util.UUID
 
 /**
- * Talks to an OBD2 adapter (the user's V-LINK, an ELM327 over classic Bluetooth) and turns the
+ * Talks to an OBD2 adapter (an ELM327 or compatible over classic Bluetooth) and turns the
  * car's answers into numbers. Ported from the user's dongle launcher (`Obd.java`), itself ported
  * from their Painel GTS app, both tested on the Polo GTS. READ ONLY: mode 01 requests, nothing
  * here writes to any of the car's modules. Everything blocks: call it off the main thread.
  */
 interface ObdLink {
-    /** What to call it in the status line ("V-LINK", "Simulação"…). */
+    /** What to call it in the status line (the adapter's Bluetooth name, or the simulator's). */
     val name: String
     /** Sends a text command and returns the answer up to the ELM's ">" prompt, or with [NO_ANSWER] appended. */
     @Throws(IOException::class)
@@ -27,7 +27,7 @@ interface ObdLink {
     }
 }
 
-/** Classic Bluetooth (the V-LINK is paired in the phone's settings, PIN 1234 or 0000). */
+/** Classic Bluetooth (the adapter is paired in the phone's settings, PIN 1234 or 0000). */
 @SuppressLint("MissingPermission")
 class BluetoothObdLink(device: BluetoothDevice) : ObdLink {
     override val name: String = device.name ?: "OBD2"
