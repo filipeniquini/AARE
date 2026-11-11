@@ -23,7 +23,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BluetoothDisabled
 import androidx.compose.material.icons.rounded.BluetoothSearching
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.OndemandVideo
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Terrain
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -60,6 +66,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import net.prototux.aare.R
 import net.prototux.aare.car.Weather
+import net.prototux.aare.obd.GpsReadings
+import net.prototux.aare.obd.GpsTrip
 import net.prototux.aare.obd.ObdReader
 import net.prototux.aare.obd.ObdReadings
 import androidx.compose.runtime.collectAsState
@@ -152,8 +160,11 @@ private fun scale(u: Float) = Scale(u, LocalDensity.current.fontScale)
 
 @Composable
 private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
-    val obd by ObdReader.readings.collectAsState()
     val obdStatus by ObdReader.status.collectAsState()
+    // No adapter being read (left at home, switched off, not wanted): the car's GPS fills the card.
+    val byGps = obdStatus.state != ObdReader.State.CONNECTED
+    val obd by ObdReader.readings.collectAsState()
+    val gps by GpsTrip.readings.collectAsState()
     // The theme's line heights are for its own type sizes (32 sp lines for 24 sp text): on this
     // card's smaller text they added rows of empty space and pushed the bottom row out.
     // (copy, not ProvideTextStyle: merging an unspecified line height keeps the old one)
@@ -164,7 +175,7 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
         Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f))) {
             Column {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text(obd?.speed?.let { "%.0f".format(it) } ?: "--", fontSize = s.sp(64f), lineHeight = s.sp(64f), fontWeight = FontWeight.Bold,
+                    Text((if (byGps) gps?.speed else obd?.speed)?.let { "%.0f".format(it) } ?: "--", fontSize = s.sp(64f), lineHeight = s.sp(64f), fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
                     Spacer(Modifier.width(s.dp(10f)))
                     Text("KM/H", fontSize = s.sp(18f), color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -187,7 +198,8 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
             }
             Spacer(Modifier.height(s.dp(12f)))
             // The readings take whatever height is left (it sat empty between them and the weather).
-            ReadingsGrid(obd, s, Modifier.weight(1f).fillMaxWidth())
+            if (byGps) GpsGrid(gps, s, Modifier.weight(1f).fillMaxWidth())
+            else ReadingsGrid(obd, s, Modifier.weight(1f).fillMaxWidth())
         }
     }
     }
@@ -298,6 +310,31 @@ private fun ReadingsGrid(r: ObdReadings?, s: Scale, modifier: Modifier) {
         Triple(ObdIcons.Range, stringResource(R.string.gts_range), f(r?.rangeKm, "%.0f") to "km"),
         Triple(ObdIcons.Economy, stringResource(R.string.gts_consumption), f(r?.economy, "%.1f") to "km/l"),
     )
+    Grid(readings, s, modifier)
+}
+
+/**
+ * The drive by the car's GPS, in the same six boxes: distance, time, average and top speed,
+ * altitude and heading. Shown while no adapter is read.
+ */
+@Composable
+private fun GpsGrid(g: GpsReadings?, s: Scale, modifier: Modifier) {
+    fun f(v: Float?, pattern: String) = v?.let { pattern.format(it) } ?: "--"
+    val minutes = (g?.elapsedMs ?: 0) / 60_000
+    val points = androidx.compose.ui.res.stringArrayResource(R.array.gts_compass_points)
+    val heading = g?.bearing?.let { points[((it + 22.5f) / 45f).toInt().mod(8)] }
+    Grid(listOf(
+        Triple(Icons.Rounded.Route, stringResource(R.string.gts_trip_distance), f(g?.distanceKm, if ((g?.distanceKm ?: 0f) < 100f) "%.1f" else "%.0f") to "km"),
+        Triple(Icons.Rounded.Timer, stringResource(R.string.gts_trip_time), (if (g == null) "--" else "%d:%02d".format(minutes / 60, minutes % 60)) to "h"),
+        Triple(Icons.Rounded.Speed, stringResource(R.string.gts_trip_average), f(g?.average, "%.0f") to "km/h"),
+        Triple(Icons.Rounded.KeyboardDoubleArrowUp, stringResource(R.string.gts_trip_top), f(g?.top, "%.0f") to "km/h"),
+        Triple(Icons.Rounded.Terrain, stringResource(R.string.gts_trip_altitude), f(g?.altitude, "%.0f") to "m"),
+        Triple(Icons.Rounded.Explore, stringResource(R.string.gts_trip_heading), (heading ?: "--") to (g?.bearing?.let { "%.0f°".format(it) } ?: "")),
+    ), s, modifier)
+}
+
+@Composable
+private fun Grid(readings: List<Triple<ImageVector, String, Pair<String, String>>>, s: Scale, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(s.dp(8f))) {
         readings.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(s.dp(8f))) {

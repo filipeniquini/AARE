@@ -93,6 +93,7 @@ class CarNotificationListener : NotificationListenerService() {
             sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() }?.let { _caller.value = it }
             return
         }
+        notePlaying(sbn)
         if (sbn.packageName != packageName && PhoneGuidance.isGuidance(sbn)) {
             PhoneGuidance.from(this, sbn)?.let { _guidance.value = it }
             return
@@ -116,6 +117,21 @@ class CarNotificationListener : NotificationListenerService() {
         val title = if (last.sender.isNotEmpty() && last.sender != c.title) "${c.title} · ${last.sender}" else c.title.ifEmpty { app }
         val group = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)?.isGroupConversation == true
         sink(Message(sbn.key, title, last.text, c.icon, actions, group) { speak(if (last.sender.isNotEmpty()) "${last.sender}. ${last.text}" else last.text) })
+    }
+
+    /**
+     * A player's notification whose session is playing: that app is what the phone played last
+     * ([net.prototux.aare.Settings.lastPhoneMedia]), for the car to start again when it connects.
+     */
+    private fun notePlaying(sbn: StatusBarNotification) {
+        if (sbn.packageName == packageName) return
+        val token = runCatching {
+            @Suppress("DEPRECATION") sbn.notification.extras.getParcelable<android.media.session.MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
+        }.getOrNull() ?: return
+        val playing = runCatching {
+            android.media.session.MediaController(this, token).playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
+        }.getOrDefault(false)
+        if (playing) net.prototux.aare.Settings(this).lastPhoneMedia = sbn.packageName
     }
 
     /** The conversations currently in the notification shade, newest first; all apps if [packageName] is null. */

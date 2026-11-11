@@ -192,9 +192,12 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("car_gps", true)
         set(v) = prefs.edit { putBoolean("car_gps", v) }
 
-    /** Start the last media app playing when the car connects. */
+    /**
+     * Start what the phone played last when the car connects, as Android Auto does (on unless
+     * turned off, 2026-11-11).
+     */
     var resumeMedia: Boolean
-        get() = prefs.getBoolean("resume_media", false)
+        get() = prefs.getBoolean("resume_media", true)
         set(v) = prefs.edit { putBoolean("resume_media", v) }
 
     /** Show incoming messages as banners on the car screen. */
@@ -250,6 +253,14 @@ class Settings(context: Context) {
     var lastMediaApp: String?
         get() = prefs.getString("last_media", null)
         set(v) = prefs.edit { putString("last_media", v) }
+
+    /**
+     * The app that played last on the phone, in the car or not (noted by the notification
+     * listener): what [resumeMedia] starts again.
+     */
+    var lastPhoneMedia: String?
+        get() = prefs.getString("last_phone_media", null)
+        set(v) { if (v != lastPhoneMedia) prefs.edit { putString("last_phone_media", v) } }
 
     /** The car launcher's order: app keys (package names, or the built-in apps' ids), first first. */
     var appOrder: List<String>

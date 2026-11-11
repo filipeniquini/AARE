@@ -50,8 +50,8 @@
     <string name="setup_section_connecting">Connecting</string>
     <string name="setup_toggle_wireless_title">Wireless</string>
     <string name="setup_toggle_wireless_subtitle">Connect to paired cars over Wi-Fi when they come into Bluetooth range</string>
-    <string name="setup_toggle_resume_music_title">Resume music</string>
-    <string name="setup_toggle_resume_music_subtitle">Start the last music app playing when the car connects</string>
+    <string name="setup_toggle_resume_music_title">Play on connect</string>
+    <string name="setup_toggle_resume_music_subtitle">Start what the phone played last when the car connects, like Android Auto</string>
     <string name="setup_section_location">Location</string>
     <string name="setup_toggle_car_gps_title">Use the car\'s GPS</string>
     <string name="setup_toggle_car_gps_subtitle">While connected, apps on the phone see the car\'s position instead of the phone\'s own, so navigation apps don\'t mix the two</string>
@@ -305,6 +305,8 @@
     <string name="assistant_listening">Listening…</string>
 
     <!-- phone: car phone screen (recents, contacts, keypad) -->
+    <string name="phone_tab_favorites">Favourites</string>
+    <string name="phone_no_favorites">No favourite contacts yet: star them in the Contacts app of the phone</string>
     <string name="phone_tab_recents">Recents</string>
     <string name="phone_tab_contacts">Contacts</string>
     <string name="phone_tab_keypad">Keypad</string>
@@ -334,6 +336,22 @@
 
     <!-- GTS home screen: the car card's readings -->
     <string name="gts_media_source">Phone</string>
+    <string name="gts_trip_distance">Distance</string>
+    <string name="gts_trip_time">Drive time</string>
+    <string name="gts_trip_average">Average speed</string>
+    <string name="gts_trip_top">Top speed</string>
+    <string name="gts_trip_altitude">Altitude</string>
+    <string name="gts_trip_heading">Heading</string>
+    <string-array name="gts_compass_points">
+        <item>N</item>
+        <item>NE</item>
+        <item>E</item>
+        <item>SE</item>
+        <item>S</item>
+        <item>SW</item>
+        <item>W</item>
+        <item>NW</item>
+    </string-array>
     <string name="gts_water">Water</string>
     <string name="gts_boost">Boost</string>
     <string name="gts_battery">Battery</string>

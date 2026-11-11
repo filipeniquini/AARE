@@ -97,6 +97,12 @@ class DefaultMediaHub(context: Context, scope: CoroutineScope) : MediaHub {
     /** Transport goes to what is shown as playing, else to our connection. */
     private fun target(): PlaybackSource? = _current.value ?: _connection.value
 
+    override fun play(packageName: String): Boolean {
+        val source = tracker.sources.value.firstOrNull { it.packageName == packageName } ?: return false
+        source.play()
+        return true
+    }
+
     override fun playPause() {
         target()?.playPause()
     }

@@ -236,6 +236,8 @@ internal class SessionSource(
         else controller.transportControls.play()
     }
 
+    fun play() = controller.transportControls.play()
+
     override fun pause() = controller.transportControls.pause()
     override fun next() = controller.transportControls.skipToNext()
     override fun previous() = controller.transportControls.skipToPrevious()

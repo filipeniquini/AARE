@@ -152,21 +152,58 @@ class ShellDisplayService : IShellDisplay.Stub {
         return listOfNotNull(line("vsysui="), line(" fl=")).any { fullscreen.containsMatchIn(it) }
     }
 
-    override fun keepTasks(slot: Int, packages: Array<out String>?): Int {
+    override fun closeTasks(slot: Int): Int {
         val id = idOf(slot) ?: return 0
-        val wanted = packages?.filter { Regex("[A-Za-z][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+").matches(it) }?.toSet() ?: return 0
-        if (wanted.isEmpty()) return 0
-        // "RootTask id=<root> ... displayId=<display>" then its tasks, "taskId=<n>: <package>/<activity>".
-        val out = output("am", "stack", "list") ?: return 0
-        var moved = 0
-        for (block in out.split(Regex("""\n(?=RootTask id=)"""))) {
-            val root = Regex("""RootTask id=(\d+) .*?displayId=(\d+)""").find(block) ?: continue
-            if (root.groupValues[2].toInt() != id) continue
-            val pkg = Regex("""taskId=\d+: ([\w.]+)/""").find(block)?.groupValues?.get(1) ?: continue
-            if (pkg in wanted && run("am", "display", "move-stack", root.groupValues[1], "0")) moved++
+        val atm = taskManager() ?: return 0
+        val roots = runCatching { HiddenApiBypass.invoke(atm.javaClass, atm, "getAllRootTaskInfosOnDisplay", id) as List<*> }
+            .onFailure { Log.w(TAG, "root tasks", it) }.getOrNull() ?: return 0
+        var closed = 0
+        for (r in roots) {
+            val info = r as? android.app.TaskInfo ?: continue
+            // removeTask takes it off Recents too; "am stack remove" is the same by the shell.
+            val ok = runCatching { HiddenApiBypass.invoke(atm.javaClass, atm, "removeTask", info.taskId) as? Boolean ?: true }
+                .onFailure { Log.w(TAG, "remove task ${info.taskId}", it) }.getOrDefault(false) ||
+                run("am", "stack", "remove", info.taskId.toString())
+            if (ok) closed++
         }
-        return moved
+        return closed
     }
+
+    override fun moveCallsAway(slot: Int): String? {
+        val id = idOf(slot) ?: return null
+        val atm = taskManager() ?: return null
+        val roots = runCatching { HiddenApiBypass.invoke(atm.javaClass, atm, "getAllRootTaskInfosOnDisplay", id) as List<*> }
+            .onFailure { Log.w(TAG, "root tasks", it) }.getOrNull() ?: return null
+        val moved = ArrayList<String>()
+        for (r in roots) {
+            val info = r as? android.app.TaskInfo ?: continue
+            val top = info.topActivity ?: continue
+            if (!callScreen(top)) continue
+            runCatching { HiddenApiBypass.invoke(atm.javaClass, atm, "moveRootTaskToDisplay", info.taskId, 0) }
+                .onSuccess { moved += top.flattenToShortString() }
+                .onFailure { Log.w(TAG, "move ${top.packageName}", it) }
+        }
+        return moved.takeIf { it.isNotEmpty() }?.joinToString()
+    }
+
+    /**
+     * A call's screen: the phone's dialer and call manager, or an app's call activity (WhatsApp's
+     * VoipActivity...). With the car's display focused, Android opened them there, over the app
+     * shown on the car, and the app behind came up when the call ended (2026-11-09 drive).
+     */
+    private fun callScreen(c: android.content.ComponentName): Boolean {
+        if (c.packageName in CALL_PACKAGES) return true
+        val name = c.className.substringAfterLast('.')
+        return CALL_WORDS.any { name.contains(it, ignoreCase = true) }
+    }
+
+    private var atmCache: Any? = null
+
+    /** IActivityTaskManager (hidden), null if it can't be had. */
+    @SuppressLint("PrivateApi")
+    private fun taskManager(): Any? = atmCache ?: runCatching {
+        HiddenApiBypass.invoke(Class.forName("android.app.ActivityTaskManager"), null, "getService")
+    }.getOrNull()?.also { atmCache = it }
 
     override fun release(slot: Int) {
         displays.remove(slot)?.release()
@@ -269,6 +306,11 @@ class ShellDisplayService : IShellDisplay.Stub {
         const val WAIT_FOR_RESULT = 1
         const val NAME = "AARE apps"
         const val SHELL_PACKAGE = "com.android.shell"
+        /** The phone's call screens. */
+        val CALL_PACKAGES = setOf("com.android.server.telecom", "com.google.android.dialer", "com.android.dialer",
+            "com.samsung.android.incallui", "com.android.incallui")
+        /** Words in an app's call activity name (WhatsApp's VoipActivityV2, Telegram's VoIPActivity...). */
+        val CALL_WORDS = listOf("Voip", "InCall", "CallActivity", "IncomingCall", "OngoingCall", "Calling")
 
         // DisplayManager's flags (the hidden ones by value), as scrcpy sets them for --new-display.
         const val PUBLIC = 1

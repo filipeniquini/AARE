@@ -50,8 +50,8 @@
     <string name="setup_section_connecting">A ligar</string>
     <string name="setup_toggle_wireless_title">Sem fios</string>
     <string name="setup_toggle_wireless_subtitle">Ligar a carros emparelhados por Wi-Fi quando entram no alcance do Bluetooth</string>
-    <string name="setup_toggle_resume_music_title">Retomar a música</string>
-    <string name="setup_toggle_resume_music_subtitle">Iniciar a última aplicação de música quando o carro se ligar</string>
+    <string name="setup_toggle_resume_music_title">Tocar ao conectar</string>
+    <string name="setup_toggle_resume_music_subtitle">Ao conectar no carro, voltar a tocar o que o celular tocou por último, como no Android Auto</string>
     <string name="setup_section_location">Localização</string>
     <string name="setup_toggle_car_gps_title">Utilizar o GPS do carro</string>
     <string name="setup_toggle_car_gps_subtitle">Enquanto ligado, as aplicações no telemóvel veem a posição do carro em vez da do próprio telemóvel, para que as aplicações de navegação não misturem as duas</string>
@@ -304,6 +304,8 @@
     <string name="assistant_listening">A ouvir…</string>
 
     <!-- phone: car phone screen (recents, contacts, keypad) -->
+    <string name="phone_tab_favorites">Favoritos</string>
+    <string name="phone_no_favorites">Sem favoritos: marque contatos com a estrela no app Contatos do celular</string>
     <string name="phone_tab_recents">Recentes</string>
     <string name="phone_tab_contacts">Contactos</string>
     <string name="phone_tab_keypad">Teclado</string>
@@ -333,6 +335,22 @@
 
     <!-- GTS home screen: the car card's readings -->
     <string name="gts_media_source">Celular</string>
+    <string name="gts_trip_distance">Distância</string>
+    <string name="gts_trip_time">Tempo de viagem</string>
+    <string name="gts_trip_average">Velocidade média</string>
+    <string name="gts_trip_top">Velocidade máxima</string>
+    <string name="gts_trip_altitude">Altitude</string>
+    <string name="gts_trip_heading">Rumo</string>
+    <string-array name="gts_compass_points">
+        <item>N</item>
+        <item>NE</item>
+        <item>L</item>
+        <item>SE</item>
+        <item>S</item>
+        <item>SO</item>
+        <item>O</item>
+        <item>NO</item>
+    </string-array>
     <string name="gts_water">Água</string>
     <string name="gts_boost">Turbo</string>
     <string name="gts_battery">Bateria</string>

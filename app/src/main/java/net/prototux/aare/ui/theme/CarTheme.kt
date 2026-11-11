@@ -39,7 +39,8 @@ data class CarDimens(
 )
 
 /** The GTS style's slimmer bottom bar, as the user asked (2026-11-08): about 9 mm buttons on the VW Play. */
-val GtsCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp)
+/** Its cards sit closer together too (2026-11-11: the gaps wasted screen the player could use). */
+val GtsCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp, gutter = 6.dp)
 
 val LocalCarDimens = staticCompositionLocalOf { CarDimens() }
 

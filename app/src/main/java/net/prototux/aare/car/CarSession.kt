@@ -154,6 +154,7 @@ class CarSession(
         runtime.start()
         // The car's own readings for the GTS car card, from the OBD2 adapter (V-LINK) while connected.
         holdMusicUntilCarAudio()
+        net.prototux.aare.obd.GpsTrip.start()
         if (settings.obdEnabled) net.prototux.aare.obd.ObdReader.start(context, settings.obdSimulated)
         if (settings.accessibilityInCarOnly && settings.phoneScreen) net.prototux.aare.mirror.AccessibilitySwitch.carConnected(context)
         settings.registerListener(uiScaleListener)
@@ -607,7 +608,10 @@ class CarSession(
                     if (l.hasBearingE6()) bearing = l.bearingE6 / 1e6f
                     time = System.currentTimeMillis()
                     elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
-                }.also { if (settings.carGpsForPhone) locationFeed.push(it) }
+                }.also {
+                    if (settings.carGpsForPhone) locationFeed.push(it)
+                    net.prototux.aare.obd.GpsTrip.add(it, SystemClock.elapsedRealtime())
+                }
                 carSensors = true
             }
             batch.compassDataList.lastOrNull()?.let { runtime.carHeading = it.bearingE6 / 1e6f; carSensors = true }

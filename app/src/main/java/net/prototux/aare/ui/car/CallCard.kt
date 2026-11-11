@@ -76,6 +76,8 @@ private fun InCall(call: CarCall, state: CarUiState, actions: CarActions, modifi
         while (true) { value = (System.currentTimeMillis() - call.sinceMs) / 1000; delay(1_000) }
     }
     val phone = state.apps.firstOrNull { it.kind == CarAppKind.PHONE }
+    // The Phone app shows the call full screen itself.
+    if (phone != null && state.screen == CarScreen.App(phone.id)) return
     Row(
         modifier.padding(12.dp).clip(RoundedCornerShape(28.dp)).background(Green)
             .clickable { phone?.let(actions::openApp) }.padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),

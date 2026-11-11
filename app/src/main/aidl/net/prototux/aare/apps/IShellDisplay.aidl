@@ -42,11 +42,17 @@ interface IShellDisplay {
     boolean hidesBars(int slot, String packageName) = 9;
 
     /**
-     * Before the slot's display closes: the tasks of [packages] on it move to the phone's own
-     * screen instead of closing with it (a video keeps its place for the next drive). Returns how
-     * many moved.
+     * Before the slot's display closes: the apps on it are closed and taken off the phone's
+     * Recents screen, so nothing the car opened lingers there. Returns how many were.
      */
-    int keepTasks(int slot, in String[] packages) = 10;
+    int closeTasks(int slot) = 10;
+
+    /**
+     * A call screen (the dialer's, WhatsApp's...) that opened on the slot's display, which has the
+     * focus, goes to the phone's own screen; the app under it is in front again. Returns the
+     * packages moved, or null when none was.
+     */
+    String moveCallsAway(int slot) = 11;
 
     /** Shizuku's user-service teardown call. */
     void destroy() = 16777114;

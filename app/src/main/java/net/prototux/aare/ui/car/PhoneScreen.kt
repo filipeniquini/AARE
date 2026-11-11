@@ -24,6 +24,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,7 +44,10 @@ import androidx.compose.material.icons.automirrored.rounded.CallMissed
 import androidx.compose.material.icons.automirrored.rounded.CallReceived
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.CallEnd
+import androidx.compose.material.icons.rounded.Dialpad
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -59,22 +73,27 @@ import kotlinx.coroutines.withContext
 import net.prototux.aare.R
 import net.prototux.aare.car.Calls
 import net.prototux.aare.host.CarRuntime
-import net.prototux.aare.media.Pill
 import net.prototux.aare.media.Placeholder
 import net.prototux.aare.ui.theme.LocalCarDimens
 
 /** One number to call: a recent call or a contact. */
 private class Callee(val name: String, val number: String, val detail: String, val type: Int = 0)
 
-private enum class PhoneTab(val labelRes: Int) { RECENTS(R.string.phone_tab_recents), CONTACTS(R.string.phone_tab_contacts), KEYPAD(R.string.phone_tab_keypad) }
+private enum class PhoneTab(val labelRes: Int, val icon: ImageVector) {
+    FAVORITES(R.string.phone_tab_favorites, Icons.Rounded.Star),
+    RECENTS(R.string.phone_tab_recents, Icons.Rounded.History),
+    CONTACTS(R.string.phone_tab_contacts, Icons.Rounded.Person),
+    KEYPAD(R.string.phone_tab_keypad, Icons.Rounded.Dialpad),
+}
 
 private val PERMISSIONS = listOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_CALL_LOG,
     Manifest.permission.READ_CONTACTS, Manifest.permission.READ_PHONE_STATE)
 
 /**
- * Calls from the car, like Android Auto's phone app: recent calls, favourite contacts and a
- * keypad (parked only). Calls are placed by Android's telephony, so their sound goes through the
- * car's Bluetooth hands-free link as usual.
+ * Calls from the car, like Android Auto's phone app: favourite contacts as big tiles, recent
+ * calls, every contact by letter and a keypad (parked only), picked from a column of big buttons
+ * on the side; a call in progress takes the whole screen (2026-11-11). Calls are placed by
+ * Android's telephony, so their sound goes through the car's Bluetooth hands-free link as usual.
  */
 @Composable
 internal fun PhoneScreen(runtime: CarRuntime, modifier: Modifier) {
@@ -85,7 +104,10 @@ internal fun PhoneScreen(runtime: CarRuntime, modifier: Modifier) {
             icon = Icons.Rounded.Call, modifier = modifier.background(MaterialTheme.colorScheme.background))
         return
     }
-    var tab by remember { mutableStateOf(PhoneTab.RECENTS) }
+    // Opens on the favourites when there are some, else on the recent calls.
+    val favorites by produceState<List<Callee>?>(null) { value = withContext(Dispatchers.IO) { contacts(context, starred = true) } }
+    var picked by remember { mutableStateOf<PhoneTab?>(null) }
+    val tab = picked ?: if (favorites?.isEmpty() == true) PhoneTab.RECENTS else PhoneTab.FAVORITES
     var reload by remember { mutableIntStateOf(0) }
     // While a call is on, show it with a hang-up button; poll: no listener survives the screen anyway.
     val inCall by produceState(false) {
@@ -98,22 +120,27 @@ internal fun PhoneScreen(runtime: CarRuntime, modifier: Modifier) {
         runtime.notice(callingTitle, c.name.ifBlank { c.number })
     }
 
-    Column(modifier.background(MaterialTheme.colorScheme.background).padding(horizontal = 24.dp)) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    if (inCall) {
+        FullCall(runtime.ui.call, modifier.background(MaterialTheme.colorScheme.background)) { Calls.end(context) }
+        return
+    }
+    Row(modifier.background(MaterialTheme.colorScheme.background).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        // The tabs as a column of big buttons: easier to hit from the driver's seat than a row of pills.
+        Column(Modifier.width(132.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PhoneTab.entries.forEach { t ->
-                if (t != PhoneTab.KEYPAD || !driving) Pill(stringResource(t.labelRes), selected = tab == t, onClick = { tab = t })
+                if (t != PhoneTab.KEYPAD || !driving) TabButton(t, tab == t, Modifier.weight(1f).fillMaxWidth()) { picked = t }
             }
         }
-        if (inCall && Calls.canEnd) InCallCard { Calls.end(context) }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
+        Box(Modifier.weight(1f).fillMaxHeight()) {
             when (if (driving && tab == PhoneTab.KEYPAD) PhoneTab.RECENTS else tab) {
+                PhoneTab.FAVORITES -> FavoriteGrid(favorites, call)
                 PhoneTab.RECENTS -> {
                     val recents by produceState<List<Callee>?>(null, reload) { value = withContext(Dispatchers.IO) { recents(context) } }
                     CalleeList(recents, stringResource(R.string.phone_no_recent_calls), call)
                 }
                 PhoneTab.CONTACTS -> {
-                    val contacts by produceState<List<Callee>?>(null, reload) { value = withContext(Dispatchers.IO) { contacts(context) } }
-                    CalleeList(contacts, stringResource(R.string.phone_no_contacts), call)
+                    val contacts by produceState<List<Callee>?>(null, reload) { value = withContext(Dispatchers.IO) { contacts(context, starred = false) } }
+                    ContactList(contacts, call)
                 }
                 PhoneTab.KEYPAD -> Keypad { number -> call(Callee("", number, "")) }
             }
@@ -122,18 +149,106 @@ internal fun PhoneScreen(runtime: CarRuntime, modifier: Modifier) {
 }
 
 @Composable
-private fun InCallCard(onHangUp: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(24.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer).padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Rounded.Call, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-        Spacer(Modifier.width(14.dp))
-        Text(stringResource(R.string.phone_call_in_progress), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.weight(1f))
-        Box(Modifier.size(LocalCarDimens.current.touchTarget).clip(CircleShape).background(Color(0xFFD32F2F)).clickable(onClick = onHangUp),
-            contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.CallEnd, stringResource(R.string.phone_action_hang_up), tint = Color.White)
+private fun TabButton(tab: PhoneTab, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    Column(modifier.clip(RoundedCornerShape(22.dp)).background(bg).clickable(onClick = onClick).padding(6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Icon(tab.icon, null, tint = fg, modifier = Modifier.size(32.dp))
+        Text(stringResource(tab.labelRes), style = MaterialTheme.typography.labelLarge, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** A round badge with the name's first letter, coloured by the name (the same person, the same colour). */
+@Composable
+private fun Avatar(name: String, size: androidx.compose.ui.unit.Dp) {
+    val color = AVATAR_COLORS[name.hashCode().mod(AVATAR_COLORS.size)]
+    Box(Modifier.size(size).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+        val letter = name.trim().firstOrNull { it.isLetterOrDigit() }?.uppercase()
+        if (letter != null) Text(letter, color = Color.White, fontSize = (size.value * 0.42f).sp, fontWeight = FontWeight.Bold)
+        else Icon(Icons.Rounded.Person, null, tint = Color.White, modifier = Modifier.size(size * 0.55f))
+    }
+}
+
+private val AVATAR_COLORS = listOf(Color(0xFF5C6BC0), Color(0xFF00897B), Color(0xFFD81B60), Color(0xFFEF6C00), Color(0xFF6D4C41), Color(0xFF3949AB), Color(0xFF7CB342), Color(0xFF8E24AA))
+
+/** The call in progress, the whole screen: who, for how long, and one big button to hang up. */
+@Composable
+private fun FullCall(call: CarCall?, modifier: Modifier, onHangUp: () -> Unit) {
+    val name = call?.name ?: stringResource(R.string.phone_call_in_progress)
+    val since = call?.sinceMs
+    val elapsed by produceState(0L, since) {
+        while (since != null) { value = (System.currentTimeMillis() - since) / 1000; delay(1_000) }
+    }
+    Row(modifier.fillMaxSize().padding(32.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        Avatar(name, 150.dp)
+        Spacer(Modifier.width(36.dp))
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(stringResource(if (call?.ringing == true) R.string.phone_incoming_call else R.string.phone_call_in_progress),
+                style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(name, style = MaterialTheme.typography.displaySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (since != null && call.ringing.not()) Text("%d:%02d".format(elapsed / 60, elapsed % 60),
+                style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.width(36.dp))
+        if (Calls.canEnd) Box(Modifier.size(120.dp).clip(CircleShape).background(Color(0xFFD32F2F)).clickable(onClick = onHangUp), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.CallEnd, stringResource(R.string.phone_action_hang_up), tint = Color.White, modifier = Modifier.size(56.dp))
+        }
+    }
+}
+
+/** The starred contacts as big tiles: one touch calls. */
+@Composable
+private fun FavoriteGrid(list: List<Callee>?, onCall: (Callee) -> Unit) {
+    when {
+        list == null -> Placeholder(stringResource(R.string.common_loading), loading = true)
+        list.isEmpty() -> Placeholder(stringResource(R.string.phone_no_favorites), loading = false, icon = Icons.Rounded.Star)
+        else -> LazyVerticalGrid(GridCells.Adaptive(190.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(list) { c ->
+                Column(Modifier.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .clickable { onCall(c) }.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Avatar(c.name.ifBlank { c.number }, 76.dp)
+                    Spacer(Modifier.height(8.dp))
+                    Text(c.name.ifBlank { c.number }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(c.detail.substringBefore(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/** Every contact, by letter, with the letters down the side to jump to one. */
+@Composable
+private fun ContactList(list: List<Callee>?, onCall: (Callee) -> Unit) {
+    when {
+        list == null -> Placeholder(stringResource(R.string.common_loading), loading = true)
+        list.isEmpty() -> Placeholder(stringResource(R.string.phone_no_contacts), loading = false, icon = Icons.Rounded.Person)
+        else -> {
+            fun letter(c: Callee) = c.name.trim().firstOrNull()?.uppercaseChar()?.takeIf { it.isLetter() } ?: '#'
+            // Where each letter's first contact is in the list.
+            val starts = remember(list) { LinkedHashMap<Char, Int>().apply { list.forEachIndexed { i, c -> putIfAbsent(letter(c), i) } } }
+            val listState = rememberLazyListState()
+            val scope = rememberCoroutineScope()
+            Row(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.weight(1f).fillMaxHeight(), state = listState, contentPadding = PaddingValues(bottom = 16.dp)) {
+                    items(list) { c -> CalleeRow(c, avatar = true, onCall = onCall) }
+                }
+                // Up to about a dozen letters fit as car-sized targets: with more, every second one shows.
+                BoxWithConstraints(Modifier.width(64.dp).fillMaxHeight().padding(start = 8.dp)) {
+                    val fit = (maxHeight.value / 44f).toInt().coerceAtLeast(1)
+                    val step = (starts.size + fit - 1) / fit
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                        starts.entries.filterIndexed { i, _ -> i % step.coerceAtLeast(1) == 0 }.forEach { (ch, index) ->
+                            Box(Modifier.fillMaxWidth().weight(1f).padding(vertical = 2.dp).clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clickable { scope.launch { listState.scrollToItem(index) } }, contentAlignment = Alignment.Center) {
+                                Text(ch.toString(), style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -144,32 +259,39 @@ private fun CalleeList(list: List<Callee>?, empty: String, onCall: (Callee) -> U
         list == null -> Placeholder(stringResource(R.string.common_loading), loading = true)
         list.isEmpty() -> Placeholder(empty, loading = false, icon = Icons.Rounded.Person)
         else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-            items(list) { c ->
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = LocalCarDimens.current.touchTarget).clip(RoundedCornerShape(20.dp))
-                        .clickable { onCall(c) }.padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val icon = when (c.type) {
-                        CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> Icons.AutoMirrored.Rounded.CallMissed
-                        CallLog.Calls.OUTGOING_TYPE -> Icons.AutoMirrored.Rounded.CallMade
-                        CallLog.Calls.INCOMING_TYPE -> Icons.AutoMirrored.Rounded.CallReceived
-                        else -> Icons.Rounded.Person
-                    }
-                    val missed = c.type == CallLog.Calls.MISSED_TYPE
-                    Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-                        Icon(icon, null, tint = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(c.name.ifBlank { c.number }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            color = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                        if (c.detail.isNotBlank()) Text(c.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                    }
-                    Icon(Icons.Rounded.Call, stringResource(R.string.common_call), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 12.dp))
-                }
+            items(list) { c -> CalleeRow(c, avatar = false, onCall = onCall) }
+        }
+    }
+}
+
+/** One row to call: a contact with its [avatar], or a recent call with its direction. */
+@Composable
+private fun CalleeRow(c: Callee, avatar: Boolean, onCall: (Callee) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = LocalCarDimens.current.touchTarget).clip(RoundedCornerShape(20.dp))
+            .clickable { onCall(c) }.padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val missed = c.type == CallLog.Calls.MISSED_TYPE
+        if (avatar) Avatar(c.name.ifBlank { c.number }, 52.dp)
+        else {
+            val icon = when (c.type) {
+                CallLog.Calls.MISSED_TYPE, CallLog.Calls.REJECTED_TYPE -> Icons.AutoMirrored.Rounded.CallMissed
+                CallLog.Calls.OUTGOING_TYPE -> Icons.AutoMirrored.Rounded.CallMade
+                CallLog.Calls.INCOMING_TYPE -> Icons.AutoMirrored.Rounded.CallReceived
+                else -> Icons.Rounded.Person
+            }
+            Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
             }
         }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(c.name.ifBlank { c.number }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (missed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            if (c.detail.isNotBlank()) Text(c.detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
+        Icon(Icons.Rounded.Call, stringResource(R.string.common_call), tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 12.dp))
     }
 }
 
@@ -224,8 +346,8 @@ private fun recents(context: Context): List<Callee> = runCatching {
     out
 }.getOrDefault(emptyList())
 
-/** Favourite (starred) contacts, or all of them if there are none. */
-private fun contacts(context: Context): List<Callee> = runCatching {
+/** The contacts with a phone number, by name: the favourite ([starred]) ones, or all of them. */
+private fun contacts(context: Context, starred: Boolean): List<Callee> = runCatching {
     fun query(starred: Boolean): List<Callee> {
         val out = ArrayList<Callee>()
         val seen = HashSet<String>()
@@ -234,7 +356,7 @@ private fun contacts(context: Context): List<Callee> = runCatching {
                 ContactsContract.CommonDataKinds.Phone.TYPE, ContactsContract.CommonDataKinds.Phone.LABEL),
             if (starred) "${ContactsContract.CommonDataKinds.Phone.STARRED} = 1" else null, null,
             "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} COLLATE NOCASE ASC")?.use { c ->
-            while (c.moveToNext() && out.size < 200) {
+            while (c.moveToNext() && out.size < 2000) {
                 val name = c.getString(0).orEmpty()
                 val number = c.getString(1) ?: continue
                 if (!seen.add(name + number.filter(Char::isDigit))) continue
@@ -244,5 +366,5 @@ private fun contacts(context: Context): List<Callee> = runCatching {
         }
         return out
     }
-    query(starred = true).ifEmpty { query(starred = false) }
+    query(starred)
 }.getOrDefault(emptyList())

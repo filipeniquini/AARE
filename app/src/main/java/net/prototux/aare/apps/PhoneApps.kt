@@ -53,9 +53,8 @@ object PhoneApps {
     /** The navigation app in the GTS home screen's big card (Google Maps by default). */
     val card = PhoneAppHost("card", 1)
 
-    /** The car is gone: both displays and their helpers go. */
-    /** The car is gone: both displays close; [keep] (video apps) move to the phone's screen instead of closing. */
-    fun release(keep: Set<String> = emptySet()) { full.release(keep); card.release() }
+    /** The car is gone: both displays close, their apps with them. */
+    fun release() { full.release(); card.release() }
 
     // ---------------------------------------------------------------- the phone's apps
 
@@ -168,7 +167,7 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
                 }
                 _ready.value = true
             }
-            if (displayId >= 0) then(fresh)
+            if (displayId >= 0) { watchForCalls(); then(fresh) }
         } catch (e: Exception) {
             Log.w(TAG, "attach", e)
             _ready.value = false
@@ -184,6 +183,27 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
         if (surface != null && surface !== shownIn) return@execute
         shownIn = null
         runCatching { service?.setSurface(slot, null) }
+    }
+
+    private var guard: Thread? = null
+
+    /**
+     * Every [GUARD_MS] while the display exists: a call screen that opened on it (the display has
+     * the focus, so Android puts new screens there) is sent to the phone's own screen; the car
+     * keeps its app and shows its own call card.
+     */
+    private fun watchForCalls() {
+        if (guard?.isAlive == true) return
+        guard = Thread({
+            while (true) {
+                try { Thread.sleep(GUARD_MS) } catch (_: InterruptedException) { break }
+                val s = service ?: continue
+                if (displayId < 0) continue
+                runCatching { s.moveCallsAway(slot) }.getOrNull()?.let {
+                    DiagLog.add("phone apps ($name): call screen $it opened on the car's display, moved to the phone")
+                }
+            }
+        }, "aare-call-guard-$name").apply { isDaemon = true; start() }
     }
 
     /** Opens [app] on the display (after [attach]). */
@@ -225,17 +245,19 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
     fun hidesBars(packageName: String): Boolean = runCatching { service?.hidesBars(slot, packageName) }.getOrNull() == true
 
     /** The car is gone: close the display (its apps close too), and the helper once no display needs it. */
-    fun release(keep: Set<String> = emptySet()) = worker.execute {
-        // A video playing here keeps its place: closed with the display, YouTube started over
-        // from its home screen on the next drive and play did nothing (2026-11-09).
-        if (keep.isNotEmpty()) runCatching { service?.keepTasks(slot, keep.toTypedArray()) }.getOrNull()?.let { n ->
-            if (n > 0) DiagLog.add("phone apps ($name): $n video app(s) moved to the phone's screen, to go on next time")
+    fun release() = worker.execute {
+        // Nothing the car opened stays on the phone's Recents screen (2026-11-11; before, video
+        // apps moved to the phone's screen to keep their place: playing again is now the "play
+        // on connect" setting's job).
+        runCatching { service?.closeTasks(slot) }.getOrNull()?.let { n ->
+            if (n > 0) DiagLog.add("phone apps ($name): $n app(s) closed and off the phone's Recents")
         }
         runCatching { service?.release(slot) }
         displayId = -1
         _ready.value = null
         service = null
         ShellDisplayLink.done(slot)
+        guard?.interrupt(); guard = null
     }
 
     private fun bind(context: Context): IShellDisplay? {
@@ -248,7 +270,11 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
         }.also { service = it }
     }
 
-    private companion object { const val TAG = "AarePhoneApps" }
+    private companion object {
+        const val TAG = "AarePhoneApps"
+        /** How often the display is checked for a call screen (a cheap call into the helper). */
+        const val GUARD_MS = 1_000L
+    }
 }
 
 /**

@@ -353,7 +353,7 @@ class CarRuntime(
         connections.clear()
         clusterConnections.values.forEach { it.release() }
         clusterConnections.clear()
-        if (running.isEmpty()) PhoneApps.release(keep = ui.apps.filter { it.video }.mapTo(HashSet()) { it.packageName })
+        if (running.isEmpty()) PhoneApps.release()
         if (ownsMedia) media.release()
         if (primary) closeLeftovers(usedNatively)
         if (primary) {
@@ -623,13 +623,34 @@ class CarRuntime(
         }
     }
 
-    /** Starts the last media app playing again (the "resume music" setting). */
+    /**
+     * Starts what the phone played last, whatever app it was, as Android Auto does (the "resume
+     * music" setting): through the app's own session while it is alive, else by connecting to it
+     * as a media app. A video app that was closed has neither: it stays as it is.
+     */
     fun resumeMedia() {
         scope.launch {
             // The app list and the media apps come in asynchronously: give them a moment.
             kotlinx.coroutines.delay(1_500)
-            val app = media.apps.value.firstOrNull { it.packageName == settings.lastMediaApp } ?: return@launch
+            if (media.playback.value?.playing == true) return@launch
+            val last = settings.lastPhoneMedia ?: settings.lastMediaApp ?: return@launch
+            if (media.play(last)) {
+                DiagLog.add("resume: $last plays again (its session)")
+                ui.activeMediaAppId = mediaEntryId(last)
+                settings.lastMediaApp = last
+                // A video app that played last with its picture: in the media card again.
+                if (ui.gtsStyle && ui.videoInCard == null && wantsPicture(last)) {
+                    val entry = ui.apps.firstOrNull { it.video && it.packageName == last }
+                    if (entry != null) showVideoInCard(entry) else videoCardPending = last
+                }
+                return@launch
+            }
+            val app = media.apps.value.firstOrNull { it.packageName == last }
+            if (app == null) { DiagLog.add("resume: $last is closed and isn't a media app, nothing to start"); return@launch }
+            DiagLog.add("resume: $last plays again (connected as a media app)")
             media.select(app)
+            ui.activeMediaAppId = mediaEntryId(last)
+            settings.lastMediaApp = last
             kotlinx.coroutines.delay(1_500)
             if (media.playback.value?.playing != true) media.playPause()
         }

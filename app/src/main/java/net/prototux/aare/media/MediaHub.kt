@@ -44,6 +44,9 @@ interface MediaHub {
     /** Connects to [app] (if not already) and makes it the active one. */
     fun select(app: MediaApp)
 
+    /** Starts [packageName]'s own session playing, if it has one (the app is alive). Returns whether it had. */
+    fun play(packageName: String): Boolean
+
     fun playPause()
     fun next()
     fun previous()

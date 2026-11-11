@@ -41,7 +41,7 @@ object PhoneCleanup {
      * media and navigation apps they are spared by the clean-up too (a paused player keeps its place).
      */
     fun atConnect(context: Context, settings: Settings, inUse: Set<String>) {
-        val keep = inUse + listOfNotNull(settings.lastMediaApp, settings.lastNavApp)
+        val keep = inUse + listOfNotNull(settings.lastMediaApp, settings.lastPhoneMedia, settings.lastNavApp)
         val toPause = settings.pauseInCar - inUse - context.packageName
         val clean = settings.cleanUpInCar
         if (toPause.isEmpty() && !clean) return
