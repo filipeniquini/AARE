@@ -208,7 +208,11 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
 
     /** Opens [app] on the display (after [attach]). */
     fun open(app: ComponentName) = worker.execute {
-        val ok = runCatching { service?.launch(slot, app.flattenToString()) }.getOrNull() == true
+        fun launch() = runCatching { service?.launch(slot, app.flattenToString()) }.getOrNull() == true
+        // Opened again right after another app, Android sometimes refused the start (2 in 366
+        // opens in the 2026-11-11 heavy test); a second try a moment later went through.
+        var ok = launch()
+        if (!ok) { Thread.sleep(400); ok = launch() }
         if (!ok) DiagLog.add("phone apps ($name): couldn't open ${app.packageName}")
     }
 

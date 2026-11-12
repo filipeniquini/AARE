@@ -148,7 +148,11 @@ class MainActivity : ComponentActivity() {
 
     /** Debug builds only: lets ./headunit.sh switch the head unit server on over adb. Returns true if applied. */
     private fun applyDebugExtras(intent: Intent?): Boolean {
-        if (!net.prototux.aare.BuildConfig.DEBUG || intent?.hasExtra("hu_server") != true) return false
+        if (!net.prototux.aare.BuildConfig.DEBUG || intent == null) return false
+        // The heavy test turns the bar's recent apps off while it taps around (so it never lands
+        // on a messaging app), and back afterwards.
+        if (intent.hasExtra("bar_recents")) Settings(this).barRecents = intent.getIntExtra("bar_recents", 2)
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
