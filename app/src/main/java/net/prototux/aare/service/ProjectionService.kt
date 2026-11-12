@@ -5,8 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.usb.UsbAccessory
@@ -18,7 +20,9 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -37,7 +42,10 @@ import net.prototux.aare.R
 import net.prototux.aare.Settings
 import net.prototux.aare.aap.PinRefusal
 import net.prototux.aare.aap.Transport
+import net.prototux.aare.aap.wireless.WirelessBootstrapException
 import net.prototux.aare.car.CarSession
+import net.prototux.aare.car.DrivingMode
+import net.prototux.aare.cert.CertificateDownload
 import net.prototux.aare.cert.CertificateStore
 import net.prototux.aare.media.MediaHub
 import net.prototux.aare.transport.LocalSocketTransport
@@ -74,15 +82,26 @@ class ProjectionService : Service() {
     private var session: CarSession? = null
     private var tcpServer: TcpServer? = null
     private var tcpServerLan = false
+    private var tcpServerLocalhost = false
     /** The running session came in over the head unit server's LAN listener, which turns off after it. */
     private var lanSession = false
     private var projection: MediaProjection? = null
     private var usbAccessory: UsbAccessory? = null
     private var usbRetries = 0
+    /** The accessory whose USB permission dialog is showing; keeps the service alive until answered. */
+    private var usbPermissionPending: UsbAccessory? = null
+    private var usbPermissionReceiver: BroadcastReceiver? = null
+    /** When the running session started, so a link that worked for a while gets a fresh retry budget. */
+    private var sessionStart = 0L
     private var wakeLock: PowerManager.WakeLock? = null
     private var wirelessJob: Job? = null
     /** onDestroy ran: a session closing late must not touch this instance any more. */
     private var destroyed = false
+    /** The download prompt is shown at most once per service lifetime, until a Google cert arrives. */
+    private var certDownloadPrompted = false
+    /** The last session's transport and wireless address, so a certificate download can reconnect wireless (not USB). */
+    private var lastSessionWireless = false
+    private var lastWirelessAddress: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -91,6 +110,8 @@ class ProjectionService : Service() {
         settings = Settings(this)
         certs = CertificateStore(this)
         media = MediaHub(this, scope)
+        // No session runs yet: undo a Do Not Disturb left on by a drive that crashed, now rather than at the next drive.
+        DrivingMode.recover(this)
         createChannel()
         _state.update { it.copy(running = true) }
     }
@@ -102,6 +123,7 @@ class ProjectionService : Service() {
             ACTION_WIRELESS -> intent.getStringExtra(EXTRA_DEVICE)?.let { connectWireless(it) }
             ACTION_PROBE_WIRELESS -> probeConnectedWireless()
             ACTION_AUDIO_CONSENT -> acceptAudioConsent(intent)
+            ACTION_DOWNLOAD_CERT -> downloadCertificate()
             ACTION_STOP -> { stopEverything(); return START_NOT_STICKY }
         }
         applyListeners()
@@ -115,10 +137,15 @@ class ProjectionService : Service() {
         // Pending retries and idle checks would run on a dead instance.
         main.removeCallbacksAndMessages(null)
         wirelessJob?.cancel()
+        usbPermissionReceiver?.let { runCatching { unregisterReceiver(it) } }
+        usbPermissionReceiver = null
+        usbPermissionPending = null
         // The session closes up to a second later; forget it first so its onEnded is ignored.
         val s = session
         session = null
         s?.stop()
+        // Sessions borrow this hub (ownsMedia = false): only the service can release its browser and listeners.
+        media.release()
         net.prototux.aare.mirror.PhoneMirror.release()
         // onEnded is ignored from here on: a LAN session must not leave the network listener on.
         if (lanSession) { lanSession = false; settings.headUnitServerLan = false }
@@ -135,15 +162,19 @@ class ProjectionService : Service() {
     /** Starts or stops the head unit server according to the settings. */
     private fun applyListeners() {
         val lan = settings.headUnitServer && settings.headUnitServerLan
-        // The LAN option changed (or switched itself off after a session): listen again with the new scope.
-        if (tcpServer != null && tcpServerLan != lan) { tcpServer?.stop(); tcpServer = null }
+        val localhost = settings.headUnitServer && settings.headUnitServerLocalhost
+        // A scope option changed (or LAN switched itself off after a session): listen again with it.
+        if (tcpServer != null && (tcpServerLan != lan || tcpServerLocalhost != localhost)) { tcpServer?.stop(); tcpServer = null }
         if (settings.headUnitServer && tcpServer == null) {
             tcpServerLan = lan
+            tcpServerLocalhost = localhost
             tcpServer = runCatching {
                 // Unless the user keeps network mode on, a LAN session clears the stored LAN option right away,
                 // so a service killed mid-session does not come back listening on the network.
-                TcpServer(lan = lan) { t ->
+                TcpServer(lan = lan, localhost = localhost) { t ->
                     main.post {
+                        // Accepted while onDestroy ran: a session here would hold a wake lock nothing releases.
+                        if (destroyed) { t.close(); return@post }
                         if (session == null) {
                             lanSession = lan && t !is LocalSocketTransport && settings.headUnitServerLanOnce
                             if (lanSession) settings.headUnitServerLan = false
@@ -152,7 +183,8 @@ class ProjectionService : Service() {
                     }
                 }.also { it.start() }
             }.onFailure { log("can't listen for the head unit server: ${it.message}") }.getOrNull()
-            if (tcpServer != null) log("head unit server listening on @${TcpServer.LOCAL_NAME} (adb)${if (lan) " and TCP ${TcpServer.PORT} (LAN)" else ""}")
+            if (tcpServer != null) log("head unit server listening on @${TcpServer.LOCAL_NAME} (adb)" +
+                (if (lan) " and TCP ${TcpServer.PORT} (LAN)" else if (localhost) " and TCP ${TcpServer.PORT} (localhost)" else ""))
         } else if (!settings.headUnitServer && tcpServer != null) {
             tcpServer?.stop(); tcpServer = null
         }
@@ -166,26 +198,47 @@ class ProjectionService : Service() {
         if (session != null || wirelessJob?.isActive == true) return
         val adapter = getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter ?: return
         val device = runCatching { adapter.getRemoteDevice(address) }.getOrNull() ?: return
-        // Pass the phone's stable id as the WPP device serial: strict head units (#46) want it in
-        // the version response before they send the WifiStartRequest.
+        // Pass the phone's stable id as the WPP device serial and phone_info.instance_id: strict head
+        // units (#46) want the serial in the version response before they send the WifiStartRequest,
+        // and Google's receiver library ignores every phone message except pings and
+        // version responses until phone_info carries an instance id.
         val connector = WirelessConnector(this, DiagAapLog,
-            WirelessConnector.Options(bootstrap = net.prototux.aare.aap.wireless.WirelessBootstrap.Options(deviceSerial = settings.instanceId)))
+            WirelessConnector.Options(bootstrap = net.prototux.aare.aap.wireless.WirelessBootstrap.Options(
+                deviceSerial = settings.instanceId, instanceId = settings.instanceId, deviceName = runCatching { adapter.name }.getOrNull())))
         val missing = connector.missingPermissions()
         if (missing.isNotEmpty()) {
             log("wireless: missing permissions ${missing.joinToString { it.substringAfterLast('.') }}")
             return
         }
+        lastWirelessAddress = address
         log("wireless: connecting to ${runCatching { device.name }.getOrNull() ?: address}")
         _state.update { it.copy(status = getString(R.string.notif_status_connecting_wirelessly)) }
         wirelessJob = scope.launch {
-            try {
-                val transport = connector.connect(device)
-                startSession(transport, wireless = true, peerKey = address, trustOnFirstUse = true)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log("wireless: ${e.message}")
-                _state.update { it.copy(status = getString(R.string.notif_status_not_connected), lastError = e.message) }
+            // Right after the Bluetooth link comes up some cars accept the connection but don't
+            // start Android Auto yet (the Mach-E hangs up after a few silent seconds, #74); a
+            // little later they do. The retries run in this job, so the service stays up meanwhile.
+            var retries = 0
+            while (true) {
+                try {
+                    val transport = connector.connect(device)
+                    startSession(transport, wireless = true, peerKey = address, trustOnFirstUse = true)
+                    return@launch
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log("wireless: ${e.message}")
+                    val carNotReady = generateSequence<Throwable>(e) { it.cause }.any { it is WirelessBootstrapException && it.whileNegotiating }
+                    if (carNotReady && retries < WIRELESS_RETRIES && session == null) {
+                        retries++
+                        val wait = WIRELESS_RETRY_DELAY_MS * retries
+                        log("wireless: the car didn't start Android Auto yet; trying again in ${wait / 1000} s ($retries/$WIRELESS_RETRIES)")
+                        delay(wait)
+                        if (session == null) continue
+                        return@launch
+                    }
+                    _state.update { it.copy(status = getString(R.string.notif_status_not_connected), lastError = e.message) }
+                    return@launch
+                }
             }
         }
     }
@@ -217,9 +270,62 @@ class ProjectionService : Service() {
     private fun openUsb(accessory: UsbAccessory) {
         usbAccessory = accessory
         val usb = getSystemService(UsbManager::class.java)
+        // Some phones (Samsung) don't grant the permission with USB_ACCESSORY_ATTACHED: opening
+        // then fails with "User has not given permission to accessory". Ask, and open once granted.
+        if (!usb.hasPermission(accessory)) {
+            requestUsbPermission(usb, accessory)
+            return
+        }
         val transport = runCatching { UsbAccessoryTransport(usb, accessory) }
             .onFailure { log("USB: ${it.message}") }.getOrNull() ?: return
         startSession(transport, wireless = false, peerKey = usbPeerKey(accessory), trustOnFirstUse = false)
+    }
+
+    /**
+     * Shows the system USB permission dialog for [accessory]; [openUsb] runs again when granted.
+     * The PendingIntent is explicit (our package) and mutable: the system adds
+     * EXTRA_PERMISSION_GRANTED and EXTRA_ACCESSORY to it.
+     */
+    private fun requestUsbPermission(usb: UsbManager, accessory: UsbAccessory) {
+        if (usbPermissionPending == accessory) return // dialog already showing
+        usbPermissionPending = accessory
+        if (usbPermissionReceiver == null) {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    if (intent.action != ACTION_USB_PERMISSION || destroyed) return
+                    val acc = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
+                        ?: usbPermissionPending
+                    usbPermissionPending = null
+                    val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false) ||
+                        (acc != null && getSystemService(UsbManager::class.java).hasPermission(acc))
+                    if (granted && acc != null) {
+                        log("USB: permission granted")
+                        if (session == null) openUsb(acc)
+                    } else {
+                        log("USB: permission denied")
+                        usbAccessory = null
+                        usbRetries = 0
+                        scheduleIdleStop()
+                    }
+                }
+            }
+            ContextCompat.registerReceiver(this, receiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED)
+            usbPermissionReceiver = receiver
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+        val pi = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION).setPackage(packageName), flags)
+        log("USB: asking for permission to use the accessory")
+        runCatching { usb.requestPermission(accessory, pi) }.onFailure {
+            log("USB: permission request failed: ${it.message}")
+            usbPermissionPending = null
+            scheduleIdleStop()
+            return
+        }
+        // Not answered (dialog dismissed without a broadcast): stop waiting after a while.
+        main.postDelayed({
+            if (usbPermissionPending == accessory) { usbPermissionPending = null; scheduleIdleStop() }
+        }, 120_000)
     }
 
     /**
@@ -235,14 +341,17 @@ class ProjectionService : Service() {
      * [mirror]: whether the car may be offered the phone screen (the developer TCP server only if opted in).
      */
     private fun startSession(transport: Transport, wireless: Boolean, peerKey: String, trustOnFirstUse: Boolean, mirror: Boolean = true) {
+        if (destroyed) { transport.close(); return }
         if (session != null) {
             log("already connected; refusing ${transport.name}")
             transport.close()
             return
         }
+        lastSessionWireless = wireless
         val cert = certs.pick(settings.certificateIndex)
         log("connecting ${transport.name} with certificate \"${cert.name}\"")
         acquireWakeLock()
+        sessionStart = SystemClock.elapsedRealtime()
         val s = CarSession(this, transport, cert.identity, settings, media, { projection }, wireless, peerKey, trustOnFirstUse, sessionListener, mirror)
         session = s
         _state.update { it.copy(connected = true, transport = transport.name, certificate = cert.name, lastError = null, pendingTrust = null) }
@@ -282,6 +391,12 @@ class ProjectionService : Service() {
                 // Offer the next certificate next time: strict head units only accept Google-issued ones.
                 settings.certificateIndex = settings.certificateIndex + 1
                 log("head unit rejected the certificate; next connection offers \"${certs.pick(settings.certificateIndex).name}\"")
+                // Strict head units accept only a Google-issued certificate. If we don't have one yet,
+                // offer to fetch it, so the user needn't open Advanced before connecting.
+                if (!certs.hasGoogleCertificate() && !certDownloadPrompted) {
+                    certDownloadPrompted = true
+                    certNotice(getString(R.string.notif_cert_download_title), getString(R.string.notif_cert_download_message), retry = true)
+                }
             }
             pinRefusal?.let { log("head unit ${it.peerKey} showed certificate SHA-256 ${it.fingerprint}") }
             log("disconnected: $why")
@@ -289,8 +404,11 @@ class ProjectionService : Service() {
             updateNotification(getString(R.string.notif_status_not_connected))
             // A USB link that dropped while still plugged in usually comes back: retry a few times.
             // Not a refused certificate: it would be refused again until the user trusts it.
+            // The budget counts drops in a row, not per plug-in: a head unit that drops each link at once is not retried forever.
+            if (SystemClock.elapsedRealtime() - sessionStart > USB_RETRY_RESET_MS) usbRetries = 0
             val acc = usbAccessory
             if (acc != null && pinRefusal == null && usbRetries++ < 3 && getSystemService(UsbManager::class.java).accessoryList?.contains(acc) == true) {
+                // openUsb checks hasPermission() again and asks for it if it was lost.
                 main.postDelayed({ if (this@ProjectionService.session == null) openUsb(acc) }, 1_500)
             } else {
                 usbAccessory = null
@@ -348,13 +466,30 @@ class ProjectionService : Service() {
         // started from the background (USB, Bluetooth); then run without it.
         val mic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        // Navigation apps read location with the screen off the same way: they are bound with
+        // BIND_INCLUDE_CAPABILITIES, so they only get location while locked if this service has the
+        // location type (Android Auto's host has it). Without it their location requests go inactive
+        // once the phone locks: the map stops following the car, or stays black when the app was
+        // never opened on the phone. Needs AARE's own location permission (already used for car GPS).
+        val location = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+        val micType = if (mic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
+        val locationType = if (location) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0
+        // Android 14 refuses either extra type when we were started from the background: try with
+        // both, then each, then neither.
+        val attempts = listOf(types or micType or locationType, types or micType, types or locationType, types).distinct()
         runCatching {
-            if (mic) {
-                runCatching { start(types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) }
-                    .onFailure { Log.i(TAG, "no microphone foreground type: ${it.message}"); start(types) }
-            } else {
-                start(types)
+            var last: Throwable? = null
+            for (t in attempts) {
+                val ok = runCatching { start(t) }.onFailure { last = it }.isSuccess
+                if (ok) {
+                    if (location && t and locationType == 0) Log.i(TAG, "no location foreground type: ${last?.message}")
+                    if (mic && t and micType == 0) Log.i(TAG, "no microphone foreground type: ${last?.message}")
+                    return@runCatching
+                }
             }
+            throw last ?: IllegalStateException("startForeground failed")
         }
             .onFailure { Log.w(TAG, "startForeground", it); log("can't run in the foreground: ${it.message}") }
     }
@@ -406,6 +541,65 @@ class ProjectionService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(text))
     }
 
+    /**
+     * The certificate-download prompt and its progress/result. [retry] adds a Download action, for
+     * the first offer and after a failed attempt; the progress and success notices are plain.
+     */
+    private fun certNotice(title: String, text: String, retry: Boolean) {
+        val builder = Notification.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setAutoCancel(!retry)
+        if (retry) {
+            val download = PendingIntent.getService(this, CERT_DOWNLOAD_NOTIFICATION_ID,
+                Intent(this, ProjectionService::class.java).setAction(ACTION_DOWNLOAD_CERT),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.notif_action_download_cert), download).build())
+        }
+        getSystemService(NotificationManager::class.java).notify(CERT_DOWNLOAD_NOTIFICATION_ID, builder.build())
+    }
+
+    /**
+     * Fetches Android Auto's certificate (the Advanced > Download certificate action, from a
+     * notification), adds it to the store and offers it on the next connection, so the user can
+     * just reconnect. Runs off the main thread; the notification tracks progress and the result.
+     */
+    private fun downloadCertificate() {
+        certNotice(getString(R.string.app_name), getString(R.string.notif_cert_download_progress), retry = false)
+        Thread {
+            val result = runCatching {
+                certs.importDownloaded(CertificateDownload.fetch())
+            }
+            main.post {
+                if (destroyed) return@post
+                result.onSuccess { entry ->
+                    // Offer the downloaded certificate first on the next connection.
+                    settings.certificateIndex = certs.entries().indexOfFirst { it.name == entry.name }.coerceAtLeast(0)
+                    certDownloadPrompted = false
+                    val address = lastWirelessAddress
+                    if (lastSessionWireless && address != null && session == null) {
+                        // Wireless can reconnect itself over the still-bonded Bluetooth link.
+                        certNotice(getString(R.string.notif_cert_download_ready_title),
+                            getString(R.string.notif_cert_download_reconnecting), retry = false)
+                        log("downloaded Android Auto's certificate \"${entry.name}\"; reconnecting wirelessly")
+                        connectWireless(address)
+                    } else {
+                        // USB (and anything else): the user reconnects, which re-triggers the flow.
+                        certNotice(getString(R.string.notif_cert_download_ready_title),
+                            getString(R.string.notif_cert_download_ready_message), retry = false)
+                        log("downloaded Android Auto's certificate \"${entry.name}\"; reconnect to use it")
+                    }
+                }.onFailure { e ->
+                    certNotice(getString(R.string.notif_cert_download_title),
+                        getString(R.string.notif_cert_download_failed, e.message ?: e.toString()), retry = true)
+                    log("certificate download failed: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
     private fun acquireWakeLock() {
         if (wakeLock?.isHeld == true) return
         wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "aare:projection").apply {
@@ -419,7 +613,7 @@ class ProjectionService : Service() {
     }
 
     /** Nothing to keep the service for. A held screen-capture consent counts: it can't be given again silently. */
-    private fun idle() = session == null && tcpServer == null && wirelessJob?.isActive != true && projection == null
+    private fun idle() = session == null && usbPermissionPending == null && tcpServer == null && wirelessJob?.isActive != true && projection == null
 
     private fun stopEverything() {
         // No USB reconnect after this: the session's onEnded may come after the stop.
@@ -437,9 +631,18 @@ class ProjectionService : Service() {
         private const val TAG = "AareService"
         private const val CHANNEL = "connection"
         private const val NOTIFICATION_ID = 1
+        // 2 = wireless re-connect, 3 = trust prompt (TrustReceiver); 4 = certificate download prompt.
+        private const val CERT_DOWNLOAD_NOTIFICATION_ID = 4
+        /** A USB session that lasted this long had recovered: its drop starts a new retry budget. */
+        private const val USB_RETRY_RESET_MS = 60_000L
+        /** Wireless attempts after a car that wasn't ready yet, waiting this much longer each time. */
+        private const val WIRELESS_RETRIES = 2
+        private const val WIRELESS_RETRY_DELAY_MS = 10_000L
         const val ACTION_USB = "net.prototux.aare.USB"
+        const val ACTION_USB_PERMISSION = "net.prototux.aare.USB_PERMISSION"
         const val ACTION_IDLE = "net.prototux.aare.IDLE"
         const val ACTION_STOP = "net.prototux.aare.STOP"
+        const val ACTION_DOWNLOAD_CERT = "net.prototux.aare.DOWNLOAD_CERT"
         const val ACTION_WIRELESS = "net.prototux.aare.WIRELESS"
         const val ACTION_PROBE_WIRELESS = "net.prototux.aare.PROBE_WIRELESS"
         const val EXTRA_DEVICE = "device"
@@ -458,6 +661,21 @@ class ProjectionService : Service() {
             PinnedHeadUnits(context).add(peerKey, sha256)
             context.getSystemService(NotificationManager::class.java).cancel(TrustReceiver.NOTIFICATION_ID)
             _state.update { s -> s.copy(pendingTrust = null, lastError = s.lastError.takeIf { s.pendingTrust == null }) }
+        }
+
+        /** Accessory strings head units use for Android Auto (res/xml/accessory_filter.xml). */
+        private fun isAndroidAuto(a: UsbAccessory) =
+            a.manufacturer == "Android" && (a.model == "Android Auto" || a.model == "Android Open Automotive Protocol")
+
+        /**
+         * Opening the app: an Android Auto accessory may already be attached without the USB
+         * permission (Samsung). Hand it to the service, which asks for the permission and connects.
+         */
+        fun probeUsb(context: Context) {
+            if (_state.value.connected) return
+            val usb = context.getSystemService(UsbManager::class.java) ?: return
+            val accessory = runCatching { usb.accessoryList }.getOrNull()?.firstOrNull(::isAndroidAuto) ?: return
+            startUsb(context, accessory)
         }
 
         fun startUsb(context: Context, accessory: UsbAccessory) {

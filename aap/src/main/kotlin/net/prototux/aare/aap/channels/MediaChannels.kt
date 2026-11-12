@@ -51,8 +51,8 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     /** The configuration indices the head unit listed in its Config (diagnostics). */
     val offeredConfigs: List<Int> get() = configIndices
     /**
-     * Head units on newer protocol versions don't ack audio. If no ack ever comes after a
-     * generous number of messages, we stop counting rather than stall the stream.
+     * Some head units don't ack (newer protocol versions), and some ack for a while then go quiet
+     * mid-stream. Either way we eventually stop counting acks rather than stall the stream.
      */
     @Volatile var ackless = false
         private set
@@ -61,7 +61,8 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     /** Acks the head unit has sent on this channel. */
     @Volatile var acksReceived = 0L
         private set
-    private val sentSinceStart = AtomicInteger(0)
+    /** Messages tried (sent or dropped) since the last ack, or since the stream started. */
+    private val sinceAck = AtomicInteger(0)
 
     override fun onOpened() {
         send(MediaMsg.SETUP, Setup.newBuilder().setType(codec).build())
@@ -84,6 +85,7 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
                 if (ack.hasSessionId() && ack.sessionId != mediaSession && ack.sessionId == previousSession) return
                 ackSeen = true
                 acksReceived++
+                sinceAck.set(0)
                 val n = if (ack.hasAck()) ack.ack else 1
                 // Never go negative: some head units ack frames sent before a restart.
                 unacked.updateAndGet { maxOf(0, it - n) }
@@ -93,6 +95,12 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
         }
     }
 
+    /**
+     * Send priority of this stream's DATA. START and STOP use it too, so they stay in order with
+     * the data around them instead of overtaking it at control priority.
+     */
+    protected abstract val dataPriority: Int
+
     protected open fun onConfig(cfg: Config) {}
     protected open fun onAcked() {}
     protected open fun onOtherMessage(msg: AapMessage) {}
@@ -101,8 +109,8 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
     protected fun startStream(configIndex: Int) {
         mediaSession = sessionCounter.incrementAndGet()
         unacked.set(0)
-        sentSinceStart.set(0)
-        send(MediaMsg.START, Start.newBuilder().setSessionId(mediaSession).setConfigurationIndex(configIndex).build())
+        sinceAck.set(0)
+        send(MediaMsg.START, Start.newBuilder().setSessionId(mediaSession).setConfigurationIndex(configIndex).build(), dataPriority)
         started = true
     }
 
@@ -110,16 +118,20 @@ abstract class MediaSinkChannel(service: Service, name: String, private val code
         if (!started) return
         started = false
         previousSession = mediaSession
-        send(MediaMsg.STOP, Stop.getDefaultInstance())
+        send(MediaMsg.STOP, Stop.getDefaultInstance(), dataPriority)
     }
 
     /**
-     * Counts a message we tried to send (sent or dropped for lack of window). Head units on newer
-     * protocol versions may never ack: once well past the window without a single ack, stop
-     * waiting for acks. Dropped messages count too, or a full window would hide the problem.
+     * Counts a message we tried to send (sent or dropped for lack of window). Head units may stop
+     * acking: some never ack (newer protocol versions), some ack for a while then go quiet mid-
+     * stream (#82: music plays a second, then the in-flight window fills and never drains, so every
+     * chunk is dropped and the car falls silent until reconnect). Either way, once we are well past
+     * the window with no ack in sight, stop waiting for acks so the stream keeps flowing. The
+     * counter resets on every ack ([onMessage]), so a head unit that acks normally never trips it.
+     * Dropped messages count too, or a full, stuck window would hide the stall.
      */
     protected fun noteAttempt() {
-        if (!ackSeen && !ackless && sentSinceStart.incrementAndGet() > 2 * maxUnacked + ACKLESS_AFTER) {
+        if (!ackless && sinceAck.incrementAndGet() > 2 * maxUnacked + ACKLESS_AFTER) {
             ackless = true
             unacked.set(0)
         }
@@ -227,6 +239,7 @@ class VideoChannel(
     private val sentAt = ArrayDeque<Long>()
 
     override val openPriority = 0
+    override val dataPriority = Priority.VIDEO
 
     override fun onConfig(cfg: Config) {
         if (!ready) return
@@ -239,23 +252,22 @@ class VideoChannel(
         // Ask to be shown; head units answer with a focus notification. The stream starts then, as
         // with Android Auto: a VW MIB head unit shows nothing and acks nothing when it starts earlier.
         send(MediaMsg.VIDEO_FOCUS_REQUEST, VideoFocusRequestNotification.newBuilder()
-            .setMode(VideoFocusMode.VIDEO_FOCUS_PROJECTED).setReason(VideoFocusReason.UNKNOWN).build())
+            .setMode(VideoFocusMode.VIDEO_FOCUS_PROJECTED).setReason(VideoFocusReason.UNKNOWN).build(), dataPriority)
     }
 
     override fun onOtherMessage(msg: AapMessage) {
         when (msg.id) {
             MediaMsg.VIDEO_FOCUS_NOTIFICATION -> {
                 val n = VideoFocusNotification.parseFrom(msg.bodyBytes())
-                val projected = n.focus == VideoFocusMode.VIDEO_FOCUS_PROJECTED ||
-                    n.focus == VideoFocusMode.VIDEO_FOCUS_PROJECTED_NO_INPUT_FOCUS
-                setFocus(projected)
+                setFocus(isProjected(n.focus))
             }
             MediaMsg.VIDEO_FOCUS_REQUEST -> {
                 // Some head units ask us to change focus; we comply and confirm.
                 val r = VideoFocusRequestNotification.parseFrom(msg.bodyBytes())
-                val projected = r.mode == VideoFocusMode.VIDEO_FOCUS_PROJECTED
+                val projected = isProjected(r.mode)
+                // Confirm the projected mode it asked for (with or without input focus).
                 send(MediaMsg.VIDEO_FOCUS_NOTIFICATION, VideoFocusNotification.newBuilder()
-                    .setFocus(if (projected) VideoFocusMode.VIDEO_FOCUS_PROJECTED else VideoFocusMode.VIDEO_FOCUS_NATIVE)
+                    .setFocus(if (projected) r.mode else VideoFocusMode.VIDEO_FOCUS_NATIVE)
                     .setUnsolicited(false).build())
                 setFocus(projected)
             }
@@ -313,8 +325,11 @@ class VideoChannel(
             synchronized(lock) { resetWindow(); sentAt.clear(); lastAckAt = System.nanoTime() }
         }
         if (projected) {
+            // Some head units throw their decoder away while they show their own screen (the
+            // reverse camera on LG GEN5, #109; the VW Play) and only build a new one on a START:
+            // the stream stopped above on the focus loss, and the START above began a fresh one.
             synchronized(lock) { needKeyFrame = true; while (pending.isNotEmpty()) pending.removeFirst().let { it.recycle(it.buf) } }
-            // resend codec config: some head units reset their decoder when focus returns
+            // Resend the codec config after the (re)start, the same as at connection.
             codecConfig?.let { sendCodecConfigData(it, 0, it.size, Priority.VIDEO) }
         }
         if (changed || projected) listener.onVideoFocus(projected)
@@ -424,6 +439,10 @@ class VideoChannel(
         const val MAX_PENDING = 8
         /** No ack for this long with the window full: the car has dropped what's in flight. */
         const val STALL_NS = 2_000_000_000L
+
+        /** Our projection is on screen, with or without input focus (native, transient native: not). */
+        private fun isProjected(mode: VideoFocusMode) =
+            mode == VideoFocusMode.VIDEO_FOCUS_PROJECTED || mode == VideoFocusMode.VIDEO_FOCUS_PROJECTED_NO_INPUT_FOCUS
     }
 }
 
@@ -438,6 +457,7 @@ class AudioChannel(service: Service, private val listener: Listener? = null) :
     }
 
     val streamType: AudioStreamType = service.mediaSinkService.audioType
+    override val dataPriority = Priority.AUDIO
     /** Underflows the car reported on this stream (0x800B). */
     @Volatile var underflows = 0
         private set

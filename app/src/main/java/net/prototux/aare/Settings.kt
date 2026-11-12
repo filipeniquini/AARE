@@ -7,12 +7,19 @@ import java.util.UUID
 
 /** User settings, in one SharedPreferences file. */
 class Settings(context: Context) {
+    /** Not the Activity [Settings] may be made with, so an instance kept around does not leak it. */
+    private val appContext = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     /** Serve the developer "head unit server" like Android Auto does, through adb (for DHU/openauto/headunit-revived). */
     var headUnitServer: Boolean
         get() = prefs.getBoolean("hu_server", false)
         set(v) = prefs.edit { putBoolean("hu_server", v) }
+
+    /** Write the protocol frame trace to the in-app connection log too, to capture it without adb. */
+    var verboseProtocolLog: Boolean
+        get() = prefs.getBoolean("verbose_protocol_log", false)
+        set(v) = prefs.edit { putBoolean("verbose_protocol_log", v) }
 
     /** Also accept head units from the network (TCP 5277, no authentication). Switched off again after one session if [headUnitServerLanOnce]. */
     var headUnitServerLan: Boolean
@@ -29,10 +36,39 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("head_unit_server_mirror", false)
         set(v) = prefs.edit { putBoolean("head_unit_server_mirror", v) }
 
+    /**
+     * Accept head-unit connections over loopback TCP ([TcpServer.PORT]) from an Android-Auto-in-the-
+     * browser bridge on this phone (webaa, paath — for cars without Android Auto, like Tesla). Any app
+     * on the phone can then reach the server, so it is off by default.
+     */
+    var headUnitServerLocalhost: Boolean
+        get() = prefs.getBoolean("hu_server_localhost", false)
+        set(v) = prefs.edit { putBoolean("hu_server_localhost", v) }
+
     /** Connect wirelessly to bonded head units that advertise wireless Android Auto. */
     var wireless: Boolean
         get() = prefs.getBoolean("wireless", true)
         set(v) = prefs.edit { putBoolean("wireless", v) }
+
+    /** Check GitHub for a newer release and warn on the home screen. Off never touches the network. */
+    var checkUpdates: Boolean
+        get() = prefs.getBoolean("check_updates", true)
+        set(v) = prefs.edit { putBoolean("check_updates", v) }
+
+    // Update-check cache (see UpdateChecker): the latest release seen and its page, when we last
+    // asked, and the version the user dismissed. Versions are stored without a leading "v".
+    var updateLatestVersion: String?
+        get() = prefs.getString("update_latest_version", null)
+        set(v) = prefs.edit { putString("update_latest_version", v) }
+    var updateLatestUrl: String?
+        get() = prefs.getString("update_latest_url", null)
+        set(v) = prefs.edit { putString("update_latest_url", v) }
+    var updateLastCheckMs: Long
+        get() = prefs.getLong("update_last_check_ms", 0)
+        set(v) = prefs.edit { putLong("update_last_check_ms", v) }
+    var updateDismissedVersion: String?
+        get() = prefs.getString("update_dismissed_version", null)
+        set(v) = prefs.edit { putString("update_dismissed_version", v) }
 
     /** Largest video height we accept from the head unit's offers (480, 720, 1080, 1440, 2160). */
     var maxVideoHeight: Int
@@ -55,6 +91,15 @@ class Settings(context: Context) {
     var maxVideoFps: Int
         get() = prefs.getInt("max_video_fps", if (prefs.getBoolean("prefer_60fps", true)) 50 else 30)
         set(v) = prefs.edit { putInt("max_video_fps", v) }
+
+    /**
+     * Force H.264 video even when the head unit and phone could both do a newer codec (H.265...).
+     * The newer codec is used automatically otherwise; this is the escape hatch for head units that
+     * advertise one but decode it poorly.
+     */
+    var forceH264: Boolean
+        get() = prefs.getBoolean("force_h264", false)
+        set(v) = prefs.edit { putBoolean("force_h264", v) }
 
     /** Where the car screen's bar goes: next to the driver ([RAIL_AUTO]), [RAIL_LEFT], [RAIL_RIGHT] or [RAIL_BOTTOM]. */
     var railPosition: String
@@ -104,6 +149,21 @@ class Settings(context: Context) {
     var carAudio: Boolean
         get() = prefs.getBoolean("car_audio", true)
         set(v) = prefs.edit { putBoolean("car_audio", v) }
+
+    /**
+     * The phone's own Bluetooth MAC, for the car's in-session pairing handshake. Android hides it
+     * from apps on most devices, and some head units withhold the projected screen until they know
+     * which phone is connected, so the user can set it (Settings > About phone > Status). Empty: try
+     * to read it, else skip.
+     */
+    var phoneBluetoothAddress: String
+        get() = prefs.getString("phone_bt_address", "") ?: ""
+        set(v) = prefs.edit { putString("phone_bt_address", v) }
+
+    /** Capture car audio through su (a rooted phone), once the user has allowed it in the audio settings. */
+    var rootAudio: Boolean
+        get() = prefs.getBoolean("root_audio", false)
+        set(v) = prefs.edit { putBoolean("root_audio", v) }
 
     /**
      * Package of the assistant the steering-wheel voice button opens (a car app such as Lapin, or a
@@ -187,6 +247,40 @@ class Settings(context: Context) {
         get() = prefs.getInt("mirror_scale_percent", 100)
         set(v) = prefs.edit { putInt("mirror_scale_percent", v) }
 
+    /**
+     * Launch ordinary phone apps on the car screen (NewPipe, emulators, a browser…): a parked-only,
+     * opt-in convenience that needs root or Shizuku. These apps are not Android Auto apps; AARE
+     * mirrors their normal phone UI and injects the car's touches, so it is paused while driving.
+     */
+    var standaloneApps: Boolean
+        get() = prefs.getBoolean("standalone_apps", false)
+        set(v) = prefs.edit { putBoolean("standalone_apps", v) }
+
+    /** The packages the user allows onto the car screen (see [standaloneApps]). */
+    var standaloneAppPackages: Set<String>
+        get() = prefs.getStringSet("standalone_app_pkgs", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("standalone_app_pkgs", HashSet(v)) }
+    /** Show a web browser (a WebView) on the car screen. Off by default; paused while driving. */
+    var browser: Boolean
+        get() = prefs.getBoolean("browser", false)
+        set(v) = prefs.edit { putBoolean("browser", v) }
+
+    /** The page the car browser opens. */
+    var browserUrl: String
+        get() = prefs.getString("browser_url", BROWSER_DEFAULT_URL) ?: BROWSER_DEFAULT_URL
+        set(v) = prefs.edit { putString("browser_url", v) }
+    /** Also show the car data (speed, sensors…) as an app on the car screen, for diagnostics. */
+    var carDataApp: Boolean
+        get() = prefs.getBoolean("car_data_app", false)
+        set(v) = prefs.edit { putBoolean("car_data_app", v) }
+    /** Where the user dragged the in-call bar on the car screen (px offset from the top centre). */
+    var callBarOffsetX: Float
+        get() = prefs.getFloat("call_bar_x", 0f)
+        set(v) = prefs.edit { putFloat("call_bar_x", v) }
+    var callBarOffsetY: Float
+        get() = prefs.getFloat("call_bar_y", 0f)
+        set(v) = prefs.edit { putFloat("call_bar_y", v) }
+
     /** While connected, the car's GPS becomes the phone's location (needs AARE as mock location app). */
     var carGpsForPhone: Boolean
         get() = prefs.getBoolean("car_gps", true)
@@ -220,8 +314,9 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("auto_reply", false)
         set(v) = prefs.edit { putBoolean("auto_reply", v) }
 
+    /** The default is resolved on read and never stored, so it follows the phone's language. */
     var autoReplyText: String
-        get() = prefs.getString("auto_reply_text", null)?.takeIf { it.isNotBlank() } ?: "I'm driving right now, I'll answer later."
+        get() = prefs.getString("auto_reply_text", null)?.takeIf { it.isNotBlank() } ?: appContext.getString(R.string.msg_autoreply_default)
         set(v) = prefs.edit { putString("auto_reply_text", v) }
 
     /** Read incoming messages aloud as they arrive. */
@@ -289,6 +384,10 @@ class Settings(context: Context) {
     var barRecents: Int
         get() = prefs.getInt("bar_recents", 2)
         set(v) = prefs.edit { putInt("bar_recents", v.coerceIn(0, 4)) }
+    /** Runtime permissions setup has asked for at least once, to tell a dismissed dialog from a refusal for good. */
+    var requestedPermissions: Set<String>
+        get() = prefs.getStringSet("requested_permissions", emptySet()) ?: emptySet()
+        set(v) = prefs.edit { putStringSet("requested_permissions", v) }
 
     /** Apps hidden from the car launcher. */
     var hiddenApps: Set<String>
@@ -305,6 +404,7 @@ class Settings(context: Context) {
         set(v) = prefs.edit { putInt("cert_index", v) }
 
     companion object {
+        const val BROWSER_DEFAULT_URL = "https://duckduckgo.com/"
         const val RAIL_AUTO = "auto"
         const val RAIL_LEFT = "left"
         const val RAIL_RIGHT = "right"

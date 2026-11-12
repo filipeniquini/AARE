@@ -1,5 +1,7 @@
 # AARE
 
+[<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="54">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/prototux/AARE)
+
 AARE is an open-source reimplementation of the phone side of Android Auto. The phone talks the
 Android Auto projection protocol (AAP) to the car's head unit, draws the car screen itself, and
 runs apps that Google's Android Auto keeps out:
@@ -101,17 +103,43 @@ an uninstall first.
 ## AA Key extraction
 
 As head units based on the official Google's host implementation checks the certificate/key of AARE,
-in order to use those, key extraction is needed:
+in order to use those, key extraction is needed.
 
-1. Download the APKm of Android Auto/com.google.android.projection.gearhead, for example from
+The quickest way: under *Advanced > Phone certificates*, tap **Download certificate**. AARE fetches
+the certificate and key extracted from the latest Android Auto app by
+[iscle/android-auto-certificates](https://github.com/iscle/android-auto-certificates), checks that
+the certificate is issued by Google Automotive Link and that the key matches it, and adds it to its
+certificates (replacing an earlier download). To extract them yourself instead:
+
+1. On your computer, clone this repository, or use **Code → Download ZIP** on GitHub and
+   extract it. Open a terminal in the repository folder, where [extract_key.py](extract_key.py)
+   is located alongside this README. For Git:
+
+   ```sh
+   git clone https://github.com/prototux/AARE.git
+   cd AARE
+   ```
+
+2. Download the APKm of Android Auto/com.google.android.projection.gearhead, for example from
    [APKPure](https://apkpure.com/fr/android-auto/com.google.android.projection.gearhead) or
-   [APKMirror](https://www.apkmirror.com/apk/google-inc/android-auto/)
+   [APKMirror](https://www.apkmirror.com/apk/google-inc/android-auto/), and place it in the
+   repository folder.
 
-2. Run the extract_key.py on the apkm: `./extract_key.py com.google.android.projection.gearhead.apkm`
+3. With Python 3 installed on your computer, run the script from that folder, replacing the
+   filename with the name of your downloaded APKm:
 
-3. The key and certificate are the `carservice_key.pem` and `carservice_cert.pem`. Copy them on your phone.
+   ```sh
+   python3 extract_key.py com.google.android.projection.gearhead.apkm
+   ```
 
-4. Open those two files with AARE. It should now work with the head unit.
+4. The key and certificate are the `carservice_key.pem` and `carservice_cert.pem`. Copy them on your phone.
+
+5. Open those two files with AARE. It should now work with the head unit.
+
+If it prints `FAILED: no valid key derived`, check that you gave it the whole bundle or the base APK: the split
+APKs hold no key. Run it again with `-v` to see the certificates and the salt and key-blob candidates it finds in
+each dex. If there are none, the layout changed in that Android Auto build (the docstring at the top of
+`extract_key.py` says what it looks for): open an issue with the Android Auto version.
 
 ## Using it
 
@@ -207,6 +235,37 @@ AARE can't show, with the reason. Two things make up for it:
     the picture is the phone's, in portrait unless you turn the phone;
   - while driving it is paused unless a navigation app is in front and guiding.
 
+### Running the apps Google locks to Android Auto (rooted phones)
+
+Three separate checks keep a non-Google host like AARE out of the apps that otherwise support
+Android Auto. Each is tied to Google's own signing certificate or to a signature-level permission
+that only Google-signed software can hold, so on a normal phone there is no way around them. On a
+**rooted phone**, the optional [AARE host-shims Xposed module](xposed/README.md) lifts each one, and
+the apps then run in AARE.
+
+1. **The Car App Library host check.** Navigation and other template apps built on `androidx.car.app`
+   check the host's signing certificate against an allowlist of Google's car apps; AARE's isn't on
+   it, so they refuse the connection (*"Unrecognized host"*). The module's `HostValidator` hook makes
+   them accept AARE.
+   *Impacted:* **Waze, 2GIS, Yandex Maps, EasyPark**, and newer builds of other template apps.
+2. **The media caller check.** Media apps hand their Android Auto browse tree only to callers whose
+   package — and, for many, whose signing certificate — is on an allowlist of Google's car apps. The
+   module makes AARE's requests pass that check, admitting AARE by **its own real certificate**, so
+   no Android Auto install is needed.
+   *Impacted:* **Spotify, YouTube Music, SoundCloud, Tidal, VRadio**, and other media apps that gate
+   on Android Auto.
+3. **Google Maps' private projection.** Maps doesn't use the public library at all: it renders
+   through an undocumented `ICarProjection` interface and checks a signature-level permission
+   (`CAPTURE_VIDEO_OUTPUT`) on whatever hosts it. AARE implements that interface, and the module
+   grants that one permission to AARE's own UID.
+   *Impacted:* **Google Maps**.
+
+> **A rooted phone is required, by design — Google's, not AARE's.** None of these checks exist for
+> safety or for the apps to function; they exist only to lock car projection to software Google has
+> signed, and to shut out every independent host. That is why there is no way around them without
+> root. On an unrooted phone these apps stay in the *can't show* list above, and only their
+> directions (through the notification path) and the phone-screen mirror are available.
+
 ### Voice assistant
 
 | Choice | What the voice button does |
@@ -245,7 +304,7 @@ AARE uses the best way to send the phone's sound to the car that the phone allow
 | Method | Needs | Navigation voice | Phone speaker |
 |---|---|---|---|
 | **System audio routing**, as Android Auto does it | a rooted phone, AARE installed as a privileged app (below) | yes, on the car's navigation channel | off |
-| **Shizuku** | [Shizuku](https://shizuku.rikka.app/) running, Android 12+ | yes, mixed with the music | off |
+| **Shizuku** | [Shizuku](https://shizuku.rikka.app/) running, Android 12+ | yes, on the car's navigation channel | off |
 | **Screen-capture permission** | one consent (choose *Entire screen*) | no | still plays |
 
 - **Privileged install (root):** `tools/magisk/build-module.sh` makes `build/aare-magisk.zip`.
@@ -253,7 +312,11 @@ AARE uses the best way to send the phone's sound to the car that the phone allow
   `/system/priv-app` with `MODIFY_AUDIO_ROUTING`. Later updates install normally if they are
   signed with the same key.
 - **Shizuku (no root):** install Shizuku and start it (wireless debugging, once after each
-  reboot). Then on AARE's *Car audio* page tap *Shizuku* to allow AARE.
+  reboot). Then on AARE's *Car audio* page tap *Shizuku* to allow AARE. The shell that Shizuku
+  runs as holds `MODIFY_AUDIO_ROUTING`, so AARE registers the same audio policy as the
+  privileged install from there: music and navigation voice go to their own car channels. If
+  the phone refuses it, AARE falls back to recording the phone's whole output, with navigation
+  voice mixed into the music.
 - **Screen capture:** works everywhere, but Android only gives normal apps media, game and
   "unknown" sounds, so navigation voice stays on the phone, and apps may opt out.
 
@@ -350,11 +413,21 @@ Other tools:
 
 | Head unit | Phone | Link | AARE | Result |
 |---|---|---|---|---|
+| Factory 10.2" multimedia screen of a 2022 Hyundai Kona Electric (LG Electronics Standard GEN5 Wide) | Google Pixel 10 Pro | USB | 1.2.0 + touch fix | **Works after the touch fix and [AA key extraction](#aa-key-extraction)** (reported by a user). The unit advertises a 0x0 touchscreen; the fix uses the visible video dimensions when the panel size is unspecified. |
 | ZLink 3 aftermarket unit, model K2001N (Allwinner T3, Android 7, sold as Android 12), in a VW Golf 6 | Pixel 10 Pro XL, Android 17 | Wireless | 1.1.0 | **Works:** full sessions with video, with AARE's own certificate. On Android 17 it needs the local network permission ([#22](https://github.com/prototux/AARE/pull/22)). Known issue: the unit asks for 1280x720 at 160 dpi with 256x120 margins, and the screen edges are cut off. |
 | Denso Ten E-DA2, the factory unit of a 2026 Toyota Land Cruiser 79 series (wired Android Auto only) | Samsung Galaxy S23 (SM-S911B), Android 16, not rooted | USB | not stated | **Works**, all features tried ([#37](https://github.com/prototux/AARE/issues/37)), with AARE's own self-signed certificate. The unit also plays the phone's Bluetooth audio during Android Auto, so the car audio setup isn't needed. |
 | Factory unit of a 2023 Skoda Octavia V, MIB3 (VW Group) | Pixel 10, GrapheneOS, no Google services | USB and wireless | not stated | **Works after [AA key extraction](#aa-key-extraction)** (reported by a user, not tested by the maintainers): with AARE's own self-signed certificate the unit rejected the connection (`AUTH_COMPLETE` status -3, [#48](https://github.com/prototux/AARE/issues/48)); with the extracted certificate it connects. Known issue: the UI ignores the unit's video margins, so the layout is off ([#55](https://github.com/prototux/AARE/issues/55)). |
 | Factory Denso unit of a 2024 Toyota RAV4 | — | — | not stated | **Rejected:** the self-signed certificate ([#46](https://github.com/prototux/AARE/issues/46)). |
 | Factory unit of a 2024 Ford Transit | — | — | not stated | **Rejected:** status -3 ([#44](https://github.com/prototux/AARE/issues/44)). |
+| Continental NAC Wave 4.4 (HW2019), the factory unit of a 2019 Citroën C5 Aircross | Fairphone (Gen 6) | USB | 1.2.0 | **Works after [AA key extraction](#aa-key-extraction)**, as well as Android Auto ([#81](https://github.com/prototux/AARE/issues/81)). |
+| Volkswagen VW3166 LGE ICAS3 (smaller screen), the factory unit of a 2021 VW ID.4 | Fairphone 4, /e/OS, Shizuku, no Google services | USB | 1.2.0 | **Works after [AA key extraction](#aa-key-extraction)** ([#68](https://github.com/prototux/AARE/issues/68)); the 1.2.0 margin fix ([#61](https://github.com/prototux/AARE/pull/61)) corrected the earlier zoomed-in layout. |
+| Panasonic T1 (8614002A81), the factory unit of a 2023 Toyota Corolla Touring Sports | Samsung Galaxy A7 (2018), Android 10 | USB | 1.2.0 | **Works after [AA key extraction](#aa-key-extraction)** ([#79](https://github.com/prototux/AARE/issues/79)); Vela maps and Symfonium audio work. Known issue: navigation lost location once the phone locked ([#87](https://github.com/prototux/AARE/issues/87), fixed in [#94](https://github.com/prototux/AARE/pull/94)). |
+| Easylink Bosch RM RNAIVI, integrated in a 2023 Renault Zoe | Fairphone FP5, /e/OS, microG, rooted | Wireless | 1.2.0 | **Partly works after [AA key extraction](#aa-key-extraction)** ([#76](https://github.com/prototux/AARE/issues/76)): the car-audio player works, but the head unit doesn't display the AARE screen, so nothing else does. |
+| Factory unit of a 2022 Chevrolet Bolt EUV | Pixel 8 Pro | USB and wireless | 1.2.0 | **Works with issues** ([#80](https://github.com/prototux/AARE/issues/80)): connects with the AA certificate, but touches land up and to the left of where they're tapped, and apps that require Google's build (Maps, Spotify, YouTube) refuse to run. |
+| Honda HFT (8A500-3A0-GD2), the factory unit of a 2025 Honda CR-V | Huawei P30, EMUI 12 (Android 10) | USB and wireless | 1.2.0 | **Works with issues** ([#70](https://github.com/prototux/AARE/issues/70)): over USB the car doesn't recognise the phone (no AA icon); over wireless it connects but the projected screen is black. |
+| Mitsubishi Electric unit of a 2020 Mercedes C-Class | Pixel 10, Android 17, GrapheneOS, no Google services, no Shizuku | USB | 1.2.0 | **Works with issues** ([#69](https://github.com/prototux/AARE/issues/69)): connects and the car shows the Android Auto icon, but the projected screen is black. |
+| Audi 326 (G35S) ALPINE MIB2+, the factory unit of a 2019 Audi Q3 | Samsung Galaxy S24 Ultra, Android 17 | USB | 1.2.0 | **Rejected** ([#86](https://github.com/prototux/AARE/issues/86)): shows the AARE screen for ~3 seconds, then returns to the car UI — "no version request from head unit". |
+| Ford SYNC 4.0, the factory unit of a 2026 Ford Mustang Mach-E (portrait screen) | Pixel 9 Pro, GrapheneOS, no Google services, not rooted, Shizuku | USB and wireless | 1.2.0 + [#103](https://github.com/prototux/AARE/pull/103)–[#106](https://github.com/prototux/AARE/pull/106) | **Works after [AA key extraction](#aa-key-extraction) with those fixes** ([#74](https://github.com/prototux/AARE/issues/74)): video, touch, audio and apps. On 1.2.0 it doesn't connect (USB "read failed", wireless "Bluetooth bootstrap link failed"). The unit leaves out every protocol field that is 0 (#103), offers two media and two guidance channels (#104), and declares a 1200x1244 touch panel but reports touches in pixels of the 1042x1080 area it shows (#105). Wireless only starts once the car has been on Bluetooth for a few seconds (#106). |
 
 If you try AARE on another head unit, please open an issue or a pull request to add it here,
 whether it worked or not.
@@ -369,8 +442,9 @@ During the handshake the head unit checks the phone's TLS certificate.
   refuses authentication (status -3).
 - **Open-source head units:** openauto/Crankshaft, Headunit Revived, LIVI and aa-proxy-rs accept
   AARE's generated certificate, as do some OEM units.
-- **Importing a certificate:** AARE does not ship or extract Google's key. If you have a
-  certificate and key you're entitled to use, import it under *Advanced > Phone certificates*.
+- **Importing a certificate:** AARE does not ship Google's key. If you have a certificate and key
+  you're entitled to use, import it under *Advanced > Phone certificates*, or tap *Download
+  certificate* there (see [AA Key extraction](#aa-key-extraction)).
 - **Fallback order:** AARE offers its certificates in turn. After a head unit rejects one, the
   next connection uses the next one.
 
@@ -479,6 +553,23 @@ that came with it:
 - GitHub Actions pinned to commits, and Dependabot;
 
 and for the first test of AARE in a real car.
+
+Code fixes and docs from [@s-ratashnyuk](https://github.com/s-ratashnyuk) (zero-panel touch
+mapping), [@JVKeller](https://github.com/JVKeller) (Mazda command-knob focus),
+[@jameswynn](https://github.com/jameswynn) (a copyable connection log),
+[@pafolol](https://github.com/pafolol) (the Samsung USB permission fix),
+[@jooray](https://github.com/jooray) and [@KrishnaX12](https://github.com/KrishnaX12) (README and
+key-extraction docs), [@freezed23](https://github.com/freezed23) (the Samsung
+separate-app-sound write-up), and [@MattMaaaan](https://github.com/MattMaaaan) (diagnosing and
+patching navigation location while the phone is locked, and the reverse-camera video restart).
+
+Head-unit reports from [@Shane11r](https://github.com/Shane11r), [@dani203](https://github.com/dani203),
+[@pgwipeout](https://github.com/pgwipeout), [@tylertneal](https://github.com/tylertneal),
+[@rutgerputter](https://github.com/rutgerputter), [@ranjowd](https://github.com/ranjowd),
+[@remyzerems](https://github.com/remyzerems), [@breversa](https://github.com/breversa),
+[@alkralor](https://github.com/alkralor), [@xaoc7](https://github.com/xaoc7),
+[@matthias-hoste](https://github.com/matthias-hoste) and [@paulhiggs](https://github.com/paulhiggs)
+— see [Tested on real head units](#tested-on-real-head-units) for the cars.
 
 ## License
 

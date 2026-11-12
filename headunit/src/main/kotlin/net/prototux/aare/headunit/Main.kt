@@ -44,6 +44,7 @@ import javax.swing.JToggleButton
 import javax.swing.SwingUtilities
 import javax.swing.UIManager
 import kotlin.concurrent.thread
+import kotlin.system.exitProcess
 
 private const val USAGE = """AARE desktop head unit: a car screen on your desktop for a phone running AARE.
 
@@ -59,20 +60,32 @@ private const val USAGE = """AARE desktop head unit: a car screen on your deskto
   --fps60                ask for 60 fps
   --rhd                  right-hand drive
   --cluster              also offer an 800x480 instrument-cluster display (shown in a second window)
+  --no-touch             present as a rotary/D-pad-only unit with no touchscreen (like a Mazda commander)
   --route NAME|FILE      simulated drive (default paris-marseille); "none" to disable
   --speed KMH            cruising speed on open road (default 130)
   --time-scale X         drive X times faster than real time (default 1)
   --serial S             adb serial of an emulator, to move its GPS along the route too
   --hu-cert PEM --hu-key PEM   head-unit certificate chain + PKCS#8 key to present (default: one made on first run, kept in ~/.config/aare/headunit)
   --headless DIR         no window: save a PNG of the screen to DIR every few seconds (for tests)
-  --script "EV@S ..."    scripted input, seconds after connecting: tap:X,Y  key:CODE  rotate:N  night  day  park  drive
+  --script "EV@S ..."    scripted input, seconds after connecting: tap:X,Y  key:CODE  rotate:N
+                         dpad:up|down|left|right|center  reverse:SECS  night  day  park  drive
 
-Keys: Esc/Backspace back · H home · V voice · arrows/wheel rotary · Enter select · K play/pause · , . prev/next
+Keys: Esc/Backspace back · H home · V voice · arrows/wheel rotary · numpad 8/4/6/2 + 5 D-pad
+      Enter select · K play/pause · , . prev/next
       N night/day · P parked/driving · Space pause the drive"""
 
 fun main(args: Array<String>) {
     if ("--help" in args || "-h" in args) { println(USAGE); return }
     val opts = parseArgs(args)
+    if (opts.containsKey("hu-cert") != opts.containsKey("hu-key")) {
+        System.err.println("--hu-cert and --hu-key go together")
+        exitProcess(2)
+    }
+    // Finite too: NaN passes a `<= 0` test, and Infinity would make the speed slider unbounded.
+    if (opts["speed"]?.let { s -> s.toDoubleOrNull()?.let { it.isFinite() && it > 0 } != true } == true) {
+        System.err.println("--speed needs a positive number of km/h")
+        exitProcess(2)
+    }
     if (opts.containsKey("gps-only")) return gpsOnly(opts)
     if (!VideoDecoder.available()) {
         System.err.println("ffmpeg not found: install it (it decodes the car screen).")
@@ -118,6 +131,18 @@ private fun parseArgs(args: Array<String>): Map<String, String> {
     return m
 }
 
+/**
+ * The DER of the first PKCS#8 key in [pem]. Only the lines between its BEGIN and END markers count,
+ * so a bundle with the certificate in it, or openssl's "Bag Attributes" headers, still works.
+ */
+internal fun pkcs8KeyDer(pem: String): ByteArray {
+    val body = pem.lineSequence().map { it.trim() }
+        .dropWhile { it != "-----BEGIN PRIVATE KEY-----" }.drop(1)
+        .takeWhile { it != "-----END PRIVATE KEY-----" }.joinToString("")
+    require(body.isNotEmpty()) { "no PKCS#8 key (-----BEGIN PRIVATE KEY-----) found" }
+    return Base64.getMimeDecoder().decode(body)
+}
+
 /** The window, the connection loop and the simulated drive. */
 private class DesktopHeadUnit(val opts: Map<String, String>) {
     val portrait = opts.containsKey("portrait")
@@ -131,6 +156,7 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
         fps60 = opts.containsKey("fps60"),
         rightHandDrive = opts.containsKey("rhd"),
         cluster = opts.containsKey("cluster"),
+        noTouch = opts.containsKey("no-touch"),
     )
     val identity: PhoneIdentity = loadIdentity()
     val route: RouteDrive? = opts["route"].let { r -> if (r == "none") null else runCatching { RouteDrive.load(r ?: "paris-marseille") }.getOrNull() }
@@ -349,10 +375,15 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
                     }
                     what.startsWith("key:") -> unit.pressKey(what.removePrefix("key:").toInt())
                     what.startsWith("rotate:") -> unit.rotate(what.removePrefix("rotate:").toInt())
+                    what.startsWith("dpad:") -> unit.pressKey(when (what.removePrefix("dpad:")) {
+                        "up" -> 19; "down" -> 20; "left" -> 21; "right" -> 22; "center", "centre", "ok" -> 23
+                        else -> return@thread
+                    })
                     what == "night" -> unit.setNight(true).also { night = true }
                     what == "day" -> unit.setNight(false).also { night = false }
                     what == "park" -> unit.setDriving(false).also { driving = false }
                     what == "drive" -> unit.setDriving(true).also { driving = true }
+                    what.startsWith("reverse:") -> unit.reverse(what.removePrefix("reverse:").toDouble())
                 }
             }
         }
@@ -361,7 +392,21 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
     fun loadIdentity(): PhoneIdentity {
         val certPath = opts["hu-cert"]
         val keyPath = opts["hu-key"]
-        if (certPath != null && keyPath != null) return readIdentity(File(certPath), File(keyPath))
+        if (certPath != null && keyPath != null) {
+            // the user's own certificate: a bad one is an error, not something to replace quietly
+            return try {
+                readIdentity(File(certPath), File(keyPath))
+            } catch (e: Exception) {
+                val text = runCatching { File(keyPath).readText() }.getOrDefault("")
+                val hint = when {
+                    "BEGIN RSA PRIVATE KEY" in text -> " (PKCS#1 key: convert it with `openssl pkcs8 -topk8 -nocrypt`)"
+                    "BEGIN EC PRIVATE KEY" in text -> " (an EC key: the head unit needs an RSA key)"
+                    else -> ""
+                }
+                System.err.println("can't use --hu-cert $certPath / --hu-key $keyPath: ${e.message}$hint")
+                exitProcess(1)
+            }
+        }
         // no certificate given: keep one per user, so the phone's Trust sticks across runs
         val dir = File(configHome(), "aare/headunit")
         val certFile = File(dir, "cert.pem")
@@ -390,9 +435,8 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
 
     fun readIdentity(certFile: File, keyFile: File): PhoneIdentity {
         val certs = certFile.inputStream().use { CertificateFactory.getInstance("X.509").generateCertificates(it) }.map { it as X509Certificate }
-        val der = Base64.getMimeDecoder().decode(keyFile.readLines().filter { !it.startsWith("-----") }.joinToString(""))
-        val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(der))
-        return PhoneIdentity(certs.first(), key, certs.drop(1))
+        val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(pkcs8KeyDer(keyFile.readText())))
+        return PhoneIdentity(certs.firstOrNull() ?: error("no certificate in ${certFile.path}"), key, certs.drop(1))
     }
 
     /** $XDG_CONFIG_HOME or ~/.config; %APPDATA% on Windows. */
@@ -473,7 +517,9 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
         ))
         p.add(gap(6))
         p.add(label("Cruise speed", 11f, color = MUTED))
-        p.add(JSlider(50, 160, cruiseKmh.toInt()).apply {
+        // widened to take a --speed outside the usual range: JSlider throws on a value outside min..max
+        val kmh = cruiseKmh.toInt()
+        p.add(JSlider(minOf(50, kmh), maxOf(160, kmh), kmh).apply {
             background = PANEL; isFocusable = false
             addChangeListener { cruiseKmh = value.toDouble() }
         })
@@ -483,9 +529,28 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
         p.add(row(button("Back") { hu?.pressKey(4) }, button("Home") { hu?.pressKey(3) }, button("🎤 Voice") { hu?.pressKey(84) }))
         p.add(gap(6))
         p.add(row(button("⏮") { hu?.pressKey(88) }, button("⏯") { hu?.pressKey(85) }, button("⏭") { hu?.pressKey(87) }))
+
+        // Rotary knob and D-pad, for testing focus navigation on units with no touchscreen (#42).
+        section("Rotary / D-pad" + if (config.noTouch) " (no touchscreen)" else "")
+        p.add(row(button("⟲ rotate") { hu?.rotate(-1) }, button("rotate ⟳") { hu?.rotate(1) }))
+        p.add(gap(6))
+        p.add(dpad())
+
         p.add(gap(14))
-        p.add(label(html("Mouse = touch · Esc back · H home · V voice · wheel/arrows rotary · N night · P parked · Space pause drive"), 11f, color = MUTED))
+        p.add(label(html("Mouse = touch · Esc back · H home · V voice · wheel/arrows rotary · numpad D-pad · N night · P parked · Space pause drive"), 11f, color = MUTED))
         return p
+    }
+
+    /** A 3×3 grid of D-pad buttons sending the real D-pad keycodes (19-22) and centre (23). */
+    private fun dpad(): JComponent {
+        fun key(text: String, code: Int) = button(text) { hu?.pressKey(code) }
+        return JPanel(GridLayout(3, 3, 6, 6)).apply {
+            isOpaque = false; alignmentX = 0f
+            maximumSize = Dimension(Int.MAX_VALUE, 120)
+            add(JLabel()); add(key("▲", 19)); add(JLabel())
+            add(key("◀", 21)); add(key("OK", 23)); add(key("▶", 22))
+            add(JLabel()); add(key("▼", 20)); add(JLabel())
+        }
     }
 
     fun installKeys() {
@@ -502,6 +567,12 @@ private class DesktopHeadUnit(val opts: Map<String, String>) {
                     KeyEvent.VK_ENTER -> h?.pressKey(23)
                     KeyEvent.VK_UP, KeyEvent.VK_LEFT -> h?.rotate(-1)
                     KeyEvent.VK_DOWN, KeyEvent.VK_RIGHT -> h?.rotate(1)
+                    // Numpad: a real D-pad (keycodes 19-22 + centre 23), distinct from the rotary.
+                    KeyEvent.VK_NUMPAD8 -> h?.pressKey(19)
+                    KeyEvent.VK_NUMPAD2 -> h?.pressKey(20)
+                    KeyEvent.VK_NUMPAD4 -> h?.pressKey(21)
+                    KeyEvent.VK_NUMPAD6 -> h?.pressKey(22)
+                    KeyEvent.VK_NUMPAD5 -> h?.pressKey(23)
                     KeyEvent.VK_N -> { night = !night; h?.setNight(night) }
                     KeyEvent.VK_P -> { driving = !driving; h?.setDriving(driving) }
                     KeyEvent.VK_SPACE -> paused = !paused

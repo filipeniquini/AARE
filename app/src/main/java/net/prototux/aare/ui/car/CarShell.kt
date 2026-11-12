@@ -31,10 +31,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.OndemandVideo
@@ -55,6 +58,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SpaceDashboard
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +68,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -81,9 +87,11 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import net.prototux.aare.R
@@ -129,16 +137,18 @@ fun CarShell(
             val onScreen = (state.screen as? CarScreen.App)?.let { state.app(it.appId) }
             val np = state.nowPlaying
             val paused = np != null && !np.playing && onScreen != null && state.app(np.appId)?.packageName == onScreen.packageName
+            // The visible area, not LocalConfiguration: that is the whole codec frame, margins included.
+            val area = DpSize(maxWidth, maxHeight)
             if (portrait || state.railBottom) {
                 Column(Modifier.fillMaxSize()) {
                     ContentArea(state, actions, appContent, navMap, Modifier.weight(1f))
-                    if (!immersive) Rail(state, actions, horizontal = true)
+                    if (!immersive) Rail(state, actions, horizontal = true, area)
                 }
             } else {
                 Row(Modifier.fillMaxSize()) {
-                    if (!state.railOnRight && !immersive) Rail(state, actions, horizontal = false)
+                    if (!state.railOnRight && !immersive) Rail(state, actions, horizontal = false, area)
                     ContentArea(state, actions, appContent, navMap, Modifier.weight(1f))
-                    if (state.railOnRight && !immersive) Rail(state, actions, horizontal = false)
+                    if (state.railOnRight && !immersive) Rail(state, actions, horizontal = false, area)
                 }
             }
             // Drawn after the content, so over the video: a short see-through column of the bar's navigation buttons on the
@@ -176,12 +186,19 @@ private fun ContentArea(
     val gutter = LocalCarDimens.current.gutter
     // Give rotary / D-pad head units a starting point: focus lands on the first focusable of each
     // screen when it opens, so the highlight is visible without a touch. Harmless on touch units.
+    // Asked again on an input mode change: in touch mode the request fails, so the first knob
+    // detent (which leaves touch mode) asks again. Not when the content still holds focus (a tap
+    // between two knob turns), or focus would jump back to the first item.
     val focusEntry = remember { FocusRequester() }
+    var contentFocused by remember { mutableStateOf(false) }
+    val inputMode = LocalInputModeManager.current.inputMode
     LaunchedEffect(state.screen) { runCatching { focusEntry.requestFocus() } }
+    LaunchedEffect(inputMode) { if (!contentFocused) runCatching { focusEntry.requestFocus() } }
     AnimatedContent(
         targetState = state.screen,
         transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
-        modifier = modifier.fillMaxHeight().focusRequester(focusEntry).focusGroup(),
+        modifier = modifier.fillMaxHeight().onFocusChanged { contentFocused = it.hasFocus }
+            .focusRequester(focusEntry).focusGroup(),
         label = "screen",
     ) { screen ->
         when (screen) {
@@ -217,17 +234,33 @@ private const val BAR_SLIDE_MS = 220
  * middle (navigation, media, phone, settings), the clock and the phone's status at the far end.
  */
 @Composable
-private fun Rail(state: CarUiState, actions: CarActions, horizontal: Boolean) {
+private fun Rail(state: CarUiState, actions: CarActions, horizontal: Boolean, area: DpSize) {
     // The "dark bar" setting: night colors for the rail even when the rest is in day colors.
     if (state.darkBar && !state.night) {
-        CarTheme(night = true, gts = net.prototux.aare.ui.theme.LocalGtsStyle.current) { RailContent(state, actions, horizontal) }
+        CarTheme(night = true, gts = net.prototux.aare.ui.theme.LocalGtsStyle.current) { RailContent(state, actions, horizontal, area) }
     } else {
-        RailContent(state, actions, horizontal)
+        RailContent(state, actions, horizontal, area)
     }
 }
 
+/** What a side rail has room for besides the clock, bell, menu and mic, from [sideRailFit]. */
+internal data class SideRailFit(val recentSlots: Int, val status: Boolean, val settings: Boolean)
+
+/**
+ * Fits the side rail to its [height] inside the padding. Everything takes about 614 dp (clock and
+ * bell 72, phone status and weather 54, the four apps 328, menu and mic 160), so on shorter screens
+ * the phone status and weather go first, then Settings (the launcher has it); below that the apps
+ * scroll. Dropping items rather than shrinking them keeps every button a full touch target.
+ */
+internal fun sideRailFit(height: Dp) = SideRailFit(
+    // A recent app only on tall screens: what an 800 dp screen leaves inside the padding.
+    recentSlots = if (height >= 768.dp) 1 else 0,
+    status = height >= 614.dp,
+    settings = height >= 560.dp,
+)
+
 @Composable
-private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Boolean) {
+private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Boolean, area: DpSize) {
     val d = LocalCarDimens.current
     val nav = state.app(state.activeNavAppId)
     val media = state.app(state.activeMediaAppId)
@@ -236,9 +269,8 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
     fun on(app: CarAppEntry?) = app != null && state.screen == CarScreen.App(app.id)
     // A bottom bar on a portrait screen is short of width (76 dp per button): fewer apps and no
     // weather there, the launcher has them all. Landscape bars keep everything.
-    val conf = LocalConfiguration.current
-    val tightBar = horizontal && conf.screenHeightDp > conf.screenWidthDp && conf.screenWidthDp < 800
-    val tighterBar = tightBar && conf.screenWidthDp < 640
+    val tightBar = horizontal && area.height > area.width && area.width < 800.dp
+    val tighterBar = tightBar && area.width < 640.dp
     // The bar's own apps: the ones chosen on the phone (Apps page), in their order, or Android
     // Auto's set (navigation, not when the home screen's big card is a live map; media; phone;
     // settings). The media and navigation slots follow the apps in use.
@@ -262,10 +294,12 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
     val fixed = chosen.mapNotNullTo(HashSet()) { it.first?.id }
     val recent = state.recentAppIds.filter { it !in fixed }.mapNotNull(state::app)
     val recentAt = if (custom == null) chosen.indexOfFirst { it.second == Icons.Rounded.MusicNote } + 1 else chosen.size
-    val apps: @Composable (Int) -> Unit = { recentSlots ->
+    // [withSettings]: a short side rail leaves Settings out (the launcher has it).
+    val apps: @Composable (Int, Boolean) -> Unit = { recentSlots, withSettings ->
         val np = state.nowPlaying
         val widget = np != null && (state.screen != CarScreen.Dashboard || state.videoInCard != null)
         chosen.forEachIndexed { i, (app, icon) ->
+            if (!withSettings && icon == Icons.Rounded.Settings) return@forEachIndexed
             if (i == recentAt) recent.take(recentSlots).forEach { r -> RailApp(r, Icons.Rounded.Apps, on(r)) { actions.openApp(r) } }
             RailApp(app, icon, on(app)) { app?.let(actions::openApp) ?: actions.openLauncher() }
             // A side rail: play/pause under the media app when the widget would show (no room for it).
@@ -313,27 +347,33 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
             } }
             if (state.driverOnRight) status() else driverEnd()
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { apps(if (tightBar) 0 else state.barRecents) }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { apps(if (tightBar) 0 else state.barRecents, !tighterBar) }
             }
             if (state.driverOnRight) driverEnd() else status()
         }
     } else {
+        val fit = sideRailFit(area.height - 32.dp)
         Column(
             Modifier.fillMaxHeight().width(d.railWidth).background(container).padding(vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Clock()
-            Spacer(Modifier.height(6.dp))
-            PhoneStatusIcons()
-            Spacer(Modifier.height(4.dp))
-            WeatherChip(state.weather)
-            NotificationBell(state) { bell() }
-            Spacer(Modifier.weight(1f))
-            // A side rail has room for a recent app only on tall screens.
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                apps(minOf(state.barRecents, if (LocalConfiguration.current.screenHeightDp >= 800) 1 else 0))
+            if (fit.status) {
+                Spacer(Modifier.height(6.dp))
+                PhoneStatusIcons()
+                Spacer(Modifier.height(4.dp))
+                WeatherChip(state.weather)
             }
-            Spacer(Modifier.weight(1f))
+            NotificationBell(state) { bell() }
+            // The apps are the only weighted child, so they are measured last and are the part that
+            // gives up space: menu and mic (the only way home on touch-only units) keep their size.
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) { apps(minOf(state.barRecents, fit.recentSlots), fit.settings) }
+            }
             menu()
             Spacer(Modifier.height(8.dp))
             mic()
@@ -653,11 +693,26 @@ private fun AppChip(app: CarAppEntry, onClick: () -> Unit) {
 
 @Composable
 fun AppIcon(app: CarAppEntry, sizeDp: Int) {
-    if (app.icon != null) {
-        Image(app.icon.asImageBitmap(), app.label, Modifier.size(sizeDp.dp).clip(CircleShape))
-    } else {
-        Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-            Text(app.label.take(1), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+    Box(contentAlignment = Alignment.BottomEnd) {
+        if (app.icon != null) {
+            Image(app.icon.asImageBitmap(), app.label, Modifier.size(sizeDp.dp).clip(CircleShape))
+        } else {
+            Box(Modifier.size(sizeDp.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                Text(app.label.take(1), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+        // A corner badge marks an ordinary phone app (not an Android Auto one), so a NewPipe that
+        // appears both as its car app and as a launched phone app is told apart at a glance.
+        if (app.kind == CarAppKind.STANDALONE) {
+            Box(
+                Modifier.size((sizeDp * 0.36f).dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.tertiary)
+                    .border((sizeDp * 0.03f).dp, MaterialTheme.colorScheme.surface, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.Smartphone, stringResource(R.string.standalone_not_native),
+                    tint = MaterialTheme.colorScheme.onTertiary, modifier = Modifier.size((sizeDp * 0.22f).dp))
+            }
         }
     }
 }
@@ -801,7 +856,7 @@ internal fun NoticeOverlay(state: CarUiState, actions: CarActions, modifier: Mod
         Column(Modifier.weight(1f)) {
             Text(notice.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             // While driving a message shows who wrote, not what: it can be read aloud instead.
-            Text(if (state.drivingRestricted && notice.isMessage) stringResource(R.string.notif_new_message_placeholder) else notice.text,
+            Text(if (state.drivingRestricted && notice.message) stringResource(R.string.notif_new_message_placeholder) else notice.text,
                 style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

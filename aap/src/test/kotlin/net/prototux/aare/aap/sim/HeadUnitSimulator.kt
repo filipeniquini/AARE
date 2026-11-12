@@ -19,6 +19,7 @@ import aap_protobuf.service.control.message.ServiceDiscoveryResponseOuterClass.S
 import aap_protobuf.service.inputsource.InputSourceServiceOuterClass.InputSourceService
 import aap_protobuf.service.inputsource.message.InputReportOuterClass.InputReport
 import aap_protobuf.service.inputsource.message.PointerActionOuterClass.PointerAction
+import aap_protobuf.service.inputsource.message.RelativeEventOuterClass.RelativeEvent
 import aap_protobuf.service.inputsource.message.TouchEventOuterClass.TouchEvent
 import aap_protobuf.service.media.shared.message.AudioConfigurationOuterClass.AudioConfiguration
 import aap_protobuf.service.media.shared.message.ConfigOuterClass.Config
@@ -37,6 +38,11 @@ import aap_protobuf.service.media.video.message.VideoFocusModeOuterClass.VideoFo
 import aap_protobuf.service.media.video.message.VideoFocusNotificationOuterClass.VideoFocusNotification
 import aap_protobuf.service.media.video.message.VideoFocusRequestNotificationOuterClass.VideoFocusRequestNotification
 import aap_protobuf.service.navigationstatus.NavigationStatusServiceOuterClass.NavigationStatusService
+import aap_protobuf.service.navigationstatus.message.NavigationStateOuterClass.NavigationState
+import aap_protobuf.service.radio.RadioServiceOuterClass.RadioService
+import aap_protobuf.service.radio.message.RadioPropertiesOuterClass.RadioProperties
+import aap_protobuf.service.radio.message.RadioTypeOuterClass.RadioType
+import aap_protobuf.service.radio.message.RangeOuterClass.Range
 import aap_protobuf.service.sensorsource.SensorSourceServiceOuterClass.SensorSourceService
 import aap_protobuf.service.sensorsource.message.DrivingStatusDataOuterClass.DrivingStatusData
 import aap_protobuf.service.sensorsource.message.NightModeDataOuterClass.NightModeData
@@ -55,12 +61,14 @@ import net.prototux.aare.aap.FrameReader
 import net.prototux.aare.aap.FrameWriter
 import net.prototux.aare.aap.InputMsg
 import net.prototux.aare.aap.MediaMsg
+import net.prototux.aare.aap.NavStatusMsg
 import net.prototux.aare.aap.SensorMsg
 import net.prototux.aare.aap.Transport
 import net.prototux.aare.aap.cert.SelfSignedCertificate
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -78,7 +86,14 @@ class HeadUnitSimulator(
     private val videoOut: OutputStream? = null,
     /** False: stays silent on video focus requests, like a car that waits for video first. */
     private val answerVideoFocus: Boolean = true,
+    /**
+     * Encode like Ford SYNC 4 (#74): fields whose value is 0 are left out, as a proto3 encoder
+     * does, even the ones aasdk's definitions call required.
+     */
+    omitZeroFields: Boolean = false,
 ) {
+    /** False when encoding like a proto3 head unit: fields set to 0 are not written. */
+    private val writeZeros = !omitZeroFields
     val huCert = SelfSignedCertificate.generate("AARE simulated head unit")
     private val cryptor = Cryptor(huCert.certificate, huCert.keyPair.private, client = true)
     @Volatile private var tlsUp = false
@@ -88,7 +103,7 @@ class HeadUnitSimulator(
 
     // channel ids, as a typical head unit numbers them
     val video = 1; val mediaAudio = 2; val guidance = 3; val system = 4; val mic = 5
-    val input = 6; val sensors = 7; val navStatus = 8; val playback = 9
+    val input = 6; val sensors = 7; val navStatus = 8; val playback = 9; val radio = 10
 
     val discoveryRequest = CountDownLatch(1)
     var phoneRequest: ServiceDiscoveryRequest? = null
@@ -100,6 +115,8 @@ class HeadUnitSimulator(
     val videoBytes = AtomicInteger()
     val codecConfigs = AtomicInteger()
     val audioChunks = AtomicInteger()
+    /** Set false to simulate a head unit that stops acking audio mid-stream (#82). */
+    @Volatile var ackAudio = true
     val pingsAnswered = AtomicInteger()
     val focusRequests = AtomicInteger()
     /** SETUPs on the microphone channel, which Android Auto never sends (VW MIB units reject them). */
@@ -112,6 +129,12 @@ class HeadUnitSimulator(
     /** STOP messages on the video channel. */
     val videoStops = AtomicInteger()
     @Volatile var error: Throwable? = null
+    /** Video focus the phone reported, in order. */
+    val focusNotifications = LinkedBlockingQueue<VideoFocusMode>()
+    /** Navigation states the phone sent, in order. */
+    val navStates = LinkedBlockingQueue<NavigationState>()
+    /** False plays a head unit that never answers the phone's bye-bye. */
+    @Volatile var answerByeBye = true
 
     fun start() {
         Thread({
@@ -132,7 +155,8 @@ class HeadUnitSimulator(
         if (m.channel == 0 && !m.control) return control(m)
         if (m.control && m.id == ControlMsg.CHANNEL_OPEN_REQUEST) {
             openedChannels.add(m.channel)
-            send(m.channel, ControlMsg.CHANNEL_OPEN_RESPONSE, ChannelOpenResponse.newBuilder().setStatus(MessageStatus.STATUS_SUCCESS).build(), control = true)
+            send(m.channel, ControlMsg.CHANNEL_OPEN_RESPONSE, ChannelOpenResponse.newBuilder()
+                .apply { if (writeZeros) setStatus(MessageStatus.STATUS_SUCCESS) }.build(), control = true)
             return
         }
         when (m.channel) {
@@ -143,15 +167,16 @@ class HeadUnitSimulator(
             sensors -> if (m.id == SensorMsg.REQUEST) {
                 val req = SensorRequest.parseFrom(m.bodyBytes())
                 sensorRequests.add(req.type)
-                send(sensors, SensorMsg.RESPONSE, SensorResponse.newBuilder().setStatus(MessageStatus.STATUS_SUCCESS).build())
+                send(sensors, SensorMsg.RESPONSE, SensorResponse.newBuilder().apply { if (writeZeros) setStatus(MessageStatus.STATUS_SUCCESS) }.build())
                 val batch = SensorBatch.newBuilder()
                 when (req.type) {
                     SensorType.SENSOR_NIGHT_MODE -> batch.addNightModeData(NightModeData.newBuilder().setNightMode(true))
-                    SensorType.SENSOR_DRIVING_STATUS_DATA -> batch.addDrivingStatusData(DrivingStatusData.newBuilder().setStatus(0))
+                    SensorType.SENSOR_DRIVING_STATUS_DATA -> batch.addDrivingStatusData(DrivingStatusData.newBuilder().apply { if (writeZeros) setStatus(0) })
                     else -> Unit
                 }
                 send(sensors, SensorMsg.BATCH, batch.build())
             }
+            navStatus -> if (m.id == NavStatusMsg.STATE) navStates.add(NavigationState.parseFrom(m.bodyBytes()))
         }
     }
 
@@ -165,7 +190,7 @@ class HeadUnitSimulator(
                 val out = cryptor.handshake(m.bodyBytes())
                 if (out.isNotEmpty()) sendPlain(0, ControlMsg.ENCAPSULATED_SSL, out)
                 if (cryptor.handshakeDone && !tlsUp) {
-                    sendPlain(0, ControlMsg.AUTH_COMPLETE, AuthResponse.newBuilder().setStatus(0).build().toByteArray())
+                    sendPlain(0, ControlMsg.AUTH_COMPLETE, AuthResponse.newBuilder().apply { if (writeZeros) setStatus(0) }.build().toByteArray())
                     tlsUp = true
                 }
             }
@@ -191,7 +216,7 @@ class HeadUnitSimulator(
             }
             ControlMsg.BYEBYE_REQUEST -> {
                 byeBye.countDown()
-                send(0, ControlMsg.BYEBYE_RESPONSE, aap_protobuf.service.control.message.ByeByeResponseOuterClass.ByeByeResponse.getDefaultInstance())
+                if (answerByeBye) send(0, ControlMsg.BYEBYE_RESPONSE, aap_protobuf.service.control.message.ByeByeResponseOuterClass.ByeByeResponse.getDefaultInstance())
             }
         }
     }
@@ -209,6 +234,7 @@ class HeadUnitSimulator(
                     .setFocus(if (r.mode == VideoFocusMode.VIDEO_FOCUS_NATIVE) VideoFocusMode.VIDEO_FOCUS_NATIVE else VideoFocusMode.VIDEO_FOCUS_PROJECTED)
                     .setUnsolicited(false).build())
             }
+            MediaMsg.VIDEO_FOCUS_NOTIFICATION -> focusNotifications.add(VideoFocusNotification.parseFrom(m.bodyBytes()).focus)
             MediaMsg.CODEC_CONFIG -> {
                 codecConfigs.incrementAndGet()
                 videoOut?.write(m.body, m.bodyOffset, m.bodyLength)
@@ -225,7 +251,8 @@ class HeadUnitSimulator(
                 val session = if (m.channel == video) videoStart?.sessionId ?: 0 else 0
                 // Like the VW Play behind its reverse camera: video arrives and is dropped unacked.
                 if (m.channel == video && dropVideoUnacked) { droppedUnacked.incrementAndGet(); return }
-                send(m.channel, MediaMsg.ACK, Ack.newBuilder().setSessionId(session).setAck(1).build())
+                if (m.channel == video || ackAudio)
+                    send(m.channel, MediaMsg.ACK, Ack.newBuilder().apply { if (session != 0 || writeZeros) setSessionId(session) }.setAck(1).build())
             }
         }
     }
@@ -238,7 +265,7 @@ class HeadUnitSimulator(
             }
             MediaMsg.MICROPHONE_REQUEST -> {
                 val r = MicrophoneRequest.parseFrom(m.bodyBytes())
-                send(mic, MediaMsg.MICROPHONE_RESPONSE, MicrophoneResponse.newBuilder().setStatus(0).setSessionId(1).build())
+                send(mic, MediaMsg.MICROPHONE_RESPONSE, MicrophoneResponse.newBuilder().apply { if (writeZeros) setStatus(0) }.setSessionId(1).build())
                 if (r.open) sendMicChunk()
             }
         }
@@ -270,11 +297,29 @@ class HeadUnitSimulator(
         }
     }
 
+    /** The car's dedicated function buttons (AA keycodes), as a head unit's hardware keys send them. */
+    fun phoneButton() = key(65540) // KEYCODE_TEL
+    fun navigationButton() = key(65538) // KEYCODE_NAVIGATION
+    fun mediaButton() = key(65537) // KEYCODE_MEDIA
+    fun radioButton() = key(65539) // KEYCODE_RADIO
+    fun callButton() = key(5) // KEYCODE_CALL
+
+    /** Turns the rotary controller [detents] detents (positive = clockwise), like a knob. */
+    fun rotary(detents: Int) {
+        send(input, InputMsg.INPUT_REPORT, InputReport.newBuilder().setTimestamp(System.nanoTime())
+            .setRelativeEvent(RelativeEvent.newBuilder()
+                .addData(RelativeEvent.Rel.newBuilder().setKeycode(65536 /* rotary */).setDelta(detents))).build())
+    }
+
     fun requestFocusNative() = send(video, MediaMsg.VIDEO_FOCUS_NOTIFICATION,
         VideoFocusNotification.newBuilder().setFocus(VideoFocusMode.VIDEO_FOCUS_NATIVE).setUnsolicited(true).build())
 
     fun requestFocusProjected() = send(video, MediaMsg.VIDEO_FOCUS_NOTIFICATION,
         VideoFocusNotification.newBuilder().setFocus(VideoFocusMode.VIDEO_FOCUS_PROJECTED).setUnsolicited(true).build())
+
+    /** Asks the phone for a video focus mode, as some head units do. */
+    fun requestFocus(mode: VideoFocusMode) = send(video, MediaMsg.VIDEO_FOCUS_REQUEST,
+        VideoFocusRequestNotification.newBuilder().setMode(mode).build())
 
     fun sayByeBye() = send(0, ControlMsg.BYEBYE_REQUEST, ByeByeRequest.newBuilder().setReason(ByeByeReason.USER_SELECTION).build())
 
@@ -296,7 +341,7 @@ class HeadUnitSimulator(
             .addChannels(Service.newBuilder().setId(video).setMediaSinkService(MediaSinkService.newBuilder()
                 .setAvailableType(MediaCodecType.MEDIA_CODEC_VIDEO_H264_BP)
                 .addVideoConfigs(VideoConfiguration.newBuilder().setCodecResolution(res)
-                    .setFrameRate(VideoFrameRateType.VIDEO_FPS_30).setDensity(dpi).setWidthMargin(0).setHeightMargin(0))))
+                    .setFrameRate(VideoFrameRateType.VIDEO_FPS_30).setDensity(dpi).apply { if (writeZeros) { setWidthMargin(0); setHeightMargin(0) } })))
             .addChannels(audio(mediaAudio, AudioStreamType.AUDIO_STREAM_MEDIA, 48000, 2))
             .addChannels(audio(guidance, AudioStreamType.AUDIO_STREAM_GUIDANCE, 16000, 1))
             .addChannels(audio(system, AudioStreamType.AUDIO_STREAM_SYSTEM_AUDIO, 16000, 1))
@@ -304,7 +349,9 @@ class HeadUnitSimulator(
                 .setAvailableType(MediaCodecType.MEDIA_CODEC_AUDIO_PCM)
                 .setAudioConfig(AudioConfiguration.newBuilder().setSamplingRate(16000).setNumberOfBits(16).setNumberOfChannels(1))))
             .addChannels(Service.newBuilder().setId(input).setInputSourceService(InputSourceService.newBuilder()
-                .addAllKeycodesSupported(listOf(3, 4, 19, 20, 21, 22, 23, 84, 85, 87, 88, 65536))
+                // HOME, BACK, CALL, ENDCALL, DPAD, SEARCH, media, VOICE_ASSIST, rotary, and the AA
+                // function buttons: MEDIA, NAVIGATION, RADIO, TEL.
+                .addAllKeycodesSupported(listOf(3, 4, 5, 6, 19, 20, 21, 22, 23, 84, 85, 87, 88, 231, 65536, 65537, 65538, 65539, 65540))
                 .addTouchscreen(InputSourceService.TouchScreen.newBuilder().setWidth(width).setHeight(height))))
             .addChannels(Service.newBuilder().setId(sensors).setSensorSourceService(SensorSourceService.newBuilder()
                 .addSensors(Sensor.newBuilder().setSensorType(SensorType.SENSOR_DRIVING_STATUS_DATA))
@@ -313,6 +360,10 @@ class HeadUnitSimulator(
             .addChannels(Service.newBuilder().setId(navStatus).setNavigationStatusService(NavigationStatusService.newBuilder()
                 .setMinimumIntervalMs(500).setType(NavigationStatusService.InstrumentClusterType.ENUM)))
             .addChannels(Service.newBuilder().setId(playback).setMediaPlaybackService(MediaPlaybackStatusService.getDefaultInstance()))
+            // An AM tuner numbered 0: a proto3 head unit sends neither its id nor its type (both 0).
+            .addChannels(Service.newBuilder().setId(radio).setRadioService(RadioService.newBuilder().addRadioProperties(
+                RadioProperties.newBuilder().apply { if (writeZeros) { setRadioId(0); setType(RadioType.AM_RADIO) } }
+                    .addChannelRange(Range.newBuilder().setMin(530).setMax(1710)).setChannelSpacing(10))))
             .build()
     }
 

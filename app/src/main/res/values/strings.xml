@@ -21,6 +21,9 @@
     <string name="common_no_items">No items</string>
     <string name="common_unsupported_screen">This screen isn\'t supported yet</string>
     <string name="common_loading">Loading</string>
+    <string name="common_ok">OK</string>
+    <string name="common_try_again">Try again</string>
+    <string name="common_something_went_wrong">Something went wrong</string>
 
     <!-- setup: MainActivity home/settings screens -->
     <string name="setup_page_car_screen_title">Car screen</string>
@@ -31,6 +34,65 @@
     <string name="setup_page_connection_subtitle">Wireless, video quality, your cars</string>
     <string name="setup_page_advanced_title">Advanced</string>
     <string name="setup_page_advanced_subtitle">Head unit server, certificates, log</string>
+    <string name="setup_page_car_data_title">Car data</string>
+    <string name="setup_page_car_data_subtitle">Live speed, gear and sensors from the car</string>
+
+    <!-- car_data: the read-only car sensor viewer -->
+    <string name="car_data_not_connected">Connect to a car to see its data.</string>
+    <string name="car_data_section_car">Car</string>
+    <string name="car_data_section_live">Live data</string>
+    <string name="car_data_identity">Vehicle</string>
+    <string name="car_data_head_unit">Head unit</string>
+    <string name="car_data_connection">Connection</string>
+    <string name="car_data_video">Video</string>
+    <string name="car_data_advertised">Advertised sensors</string>
+    <string name="car_data_driving">Driving</string>
+    <string name="car_data_parked">parked</string>
+    <string name="car_data_moving">moving</string>
+    <string name="car_data_night">Lighting</string>
+    <string name="car_data_night_on">night</string>
+    <string name="car_data_night_off">day</string>
+    <string name="car_data_speed">Speed</string>
+    <string name="car_data_cruise">Cruise set</string>
+    <string name="car_data_rpm">RPM</string>
+    <string name="car_data_gear">Gear</string>
+    <string name="car_data_parking_brake">Parking brake</string>
+    <string name="car_data_on">on</string>
+    <string name="car_data_off">off</string>
+    <string name="car_data_odometer">Odometer</string>
+    <string name="car_data_fuel">Fuel</string>
+    <string name="car_data_low">low</string>
+    <string name="car_data_compass">Heading</string>
+    <string name="car_data_satellites">GPS satellites</string>
+    <string name="car_data_environment">Outside</string>
+    <string name="car_data_rain">rain</string>
+    <string name="car_data_climate">Climate</string>
+    <string name="car_data_steering">Steering</string>
+    <string name="car_data_tyres">Tyre pressure</string>
+    <string name="car_data_doors">Doors</string>
+    <string name="car_data_hood">hood</string>
+    <string name="car_data_trunk">trunk</string>
+    <string name="car_data_door">door</string>
+    <string name="car_data_closed">all closed</string>
+    <string name="car_data_lights">Lights</string>
+    <string name="car_data_hazard">hazard</string>
+    <string name="car_data_passenger">Passenger</string>
+    <string name="car_data_toll">Toll card</string>
+    <string name="car_data_yes">yes</string>
+    <string name="car_data_no">no</string>
+    <string name="car_data_accelerometer">Accelerometer</string>
+    <string name="car_data_gyroscope">Gyroscope</string>
+    <string name="car_data_dtc">Trouble codes</string>
+    <string name="car_data_app_label">Car data</string>
+    <string name="car_data_show_in_car_title">Show on the car screen</string>
+    <string name="car_data_show_in_car_subtitle">Add a diagnostics app in the car for this live data</string>
+
+    <!-- vehicles: per-car overrides from vehicles.json -->
+    <string name="vehicles_section_title">Per-vehicle overrides</string>
+    <string name="vehicles_hint">Fix a specific car\'s density or visible-area margins without a new build. Edit vehicles.json with a file manager, matching the car by make/model/name.</string>
+    <string name="vehicles_rule_count">%1$d rule(s) loaded</string>
+    <string name="vehicles_import">Import file…</string>
+    <string name="vehicles_template">Write template</string>
     <string name="setup_tagline">Open-source car projection</string>
     <string name="setup_status_certificate">certificate: %1$s</string>
     <string name="setup_status_disconnected_hint">Plug the phone into the car\'s Android Auto USB port, or connect to a paired car wirelessly.</string>
@@ -57,6 +119,13 @@
     <string name="setup_language_hint">For all of AARE, the car screen included (from the next connection if it is on now).</string>
     <string name="setup_toggle_resume_music_title">Play on connect</string>
     <string name="setup_toggle_resume_music_subtitle">Start what the phone played last when the car connects, like Android Auto</string>
+    <string name="setup_bt_address_label">Phone Bluetooth address (optional)</string>
+    <string name="setup_bt_address_hint">Some head units show a black screen until they know which phone is connected. Find it in Settings &gt; About phone &gt; Status. Leave empty if your car already works.</string>
+    <string name="setup_section_updates">Updates</string>
+    <string name="setup_toggle_updates_title">Check for updates</string>
+    <string name="setup_toggle_updates_subtitle">Warn on the home screen when a newer release is on GitHub. Off never connects to the internet.</string>
+    <string name="update_available_title">Update available — %1$s</string>
+    <string name="update_available_subtitle">You have %1$s. Tap to view the release.</string>
     <string name="setup_section_location">Location</string>
     <string name="setup_toggle_car_gps_title">Use the car\'s GPS</string>
     <string name="setup_toggle_car_gps_subtitle">While connected, apps on the phone see the car\'s position instead of the phone\'s own, so navigation apps don\'t mix the two</string>
@@ -79,6 +148,8 @@
     <string name="aa_switch_enable">Turn on</string>
     <string name="aa_switch_needs_shizuku">Needs Shizuku running and allowed (see Car audio).</string>
     <string name="aa_switch_failed">Couldn\'t switch Android Auto. Try again, or use the phone\'s Settings > Apps.</string>
+    <string name="setup_toggle_force_h264_title">Force H.264 video</string>
+    <string name="setup_toggle_force_h264_subtitle">By default AARE uses the best codec the car and phone share (H.265…). Turn on if the car\'s picture is glitchy.</string>
     <string name="setup_section_your_cars">Your cars</string>
     <string name="setup_cars_empty">Cars appear here after the first connection.</string>
     <string name="setup_car_last_connected">Last connected %1$s</string>
@@ -129,6 +200,9 @@
     <string name="setup_app_entry_notifications">Notifications</string>
     <string name="setup_section_app_order">Order in the car</string>
     <string name="setup_section_connection_log">Connection log</string>
+    <string name="setup_log_save">Save</string>
+    <string name="setup_toggle_verbose_log_title">Verbose protocol log</string>
+    <string name="setup_toggle_verbose_log_subtitle">Record the full head-unit protocol trace in this log, to attach to a bug report. Logs a lot; leave it off otherwise.</string>
     <string name="setup_about_text">AARE %1$s · GPL-3.0-or-later · Not affiliated with Google. Android Auto is a trademark of Google LLC.</string>
     <string name="setup_choice_style">Style</string>
     <string name="setup_choice_ui_size">Interface size</string>
@@ -139,13 +213,20 @@
     <string name="setup_switch_passenger">Passenger mode: no driving restrictions (the driver must not use the screen)</string>
     <string name="setup_switch_message_notifications">Message notifications</string>
     <string name="setup_switch_audio_next_connection">Phone audio in the car (next connection)</string>
+    <string name="setup_nothing_to_open">This phone has no app that can open this</string>
+    <string name="setup_wallpaper_failed">Couldn\'t use this photo as the wallpaper</string>
 
     <!-- cert: certificate management -->
     <string name="cert_section_title">Phone certificates</string>
-    <string name="cert_hint">Head units check the phone\'s certificate. Open-source head units accept the generated one; cars using Google\'s head unit software only accept a certificate issued by Google, which AARE cannot include. You can import one you have the right to use (PEM certificate + PKCS#8 key, or PKCS#12).</string>
+    <string name="cert_hint">Head units check the phone\'s certificate. Open-source head units accept the generated one; cars using Google\'s head unit software only accept a certificate issued by Google, which AARE cannot include. You can import one you have the right to use (PEM certificate + PKCS#8 key, or PKCS#12), or download the one from the latest Android Auto app (from github.com/iscle/android-auto-certificates).</string>
     <string name="cert_entry_subtitle">%1$s · until %2$s</string>
     <string name="cert_action_remove">Remove</string>
     <string name="cert_action_import">Import certificate…</string>
+    <string name="cert_action_download">Download certificate</string>
+    <string name="cert_action_downloading">Downloading…</string>
+    <string name="cert_download_unavailable">The certificate repository is gone (deleted or taken down): %1$s. Extract the certificate from the Android Auto app instead (see the README).</string>
+    <string name="cert_download_network">Couldn\'t download the certificate: %1$s. Check the connection and try again.</string>
+    <string name="cert_download_invalid">The downloaded certificate was rejected: %1$s</string>
     <string name="cert_p12_dialog_title">PKCS#12 password</string>
     <string name="cert_action_import_confirm">Import</string>
     <string name="cert_imported_fallback">imported</string>
@@ -159,6 +240,8 @@
     <string name="huserver_toggle_lanonce_subtitle">Safer: the network has to be allowed again for each session. Turn this off for head units that reconnect on their own, like openauto or Headunit Revived.</string>
     <string name="huserver_toggle_mirror_title">Phone screen on the server</string>
     <string name="huserver_toggle_mirror_subtitle">Also offer "Phone screen" to whoever connects here. Risky: they see the phone\'s screen and can tap on it, so leave it off unless you trust the head unit.</string>
+    <string name="huserver_toggle_localhost_title">Allow localhost (webaa / paath)</string>
+    <string name="huserver_toggle_localhost_subtitle">Accept a connection from an Android-Auto-in-the-browser app on this phone, for cars without Android Auto (e.g. Tesla). Any app on the phone could connect, so leave it off unless you use one.</string>
 
     <!-- msg: messaging settings -->
     <string name="msg_settings_title">Messages</string>
@@ -179,6 +262,8 @@
     <string name="msg_toggle_autoreply_title">Auto-reply</string>
     <string name="msg_toggle_autoreply_subtitle">Answer people who write, once per conversation per drive (not groups)</string>
     <string name="msg_autoreply_field_label">Reply</string>
+    <!-- Sent to contacts while driving, unless the user wrote their own reply. -->
+    <string name="msg_autoreply_default">I\'m driving right now, I\'ll answer later.</string>
 
     <!-- audio: car audio settings -->
     <string name="audio_settings_title">Car audio</string>
@@ -194,6 +279,8 @@
     <string name="audio_shizuku_needs_android12">Needs Android 12 or newer.</string>
     <string name="audio_shizuku_tap_allow">Shizuku is running: tap to allow AARE.</string>
     <string name="audio_shizuku_install_hint">No root needed. Install Shizuku, start it (wireless debugging, once per reboot), then come back here.</string>
+    <string name="audio_root_ready">Ready, through root. Everything the phone plays goes to the car, navigation voice included; the phone stays quiet.</string>
+    <string name="audio_shizuku_or_root_hint">On a rooted phone (KernelSU, Magisk, APatch…), tap to allow root. Otherwise install Shizuku and start it (wireless debugging, once per reboot).</string>
     <string name="audio_playback_ready">Ready. Media only: no navigation voice, some apps opt out, and the phone keeps playing too.</string>
     <string name="audio_playback_not_ready">Works everywhere, with limits: media only, no navigation voice. Android asks to capture the screen: choose Entire screen (also used by the phone screen).</string>
     <string name="audio_notice_setup_hint">Open AARE on the phone and set up car audio to hear the phone in the car</string>
@@ -206,6 +293,26 @@
     <string name="phone_check_touch_subtitle">Turn on AARE in Accessibility. Sideloaded apps may first need "Allow restricted settings" in AARE\'s app info</string>
     <string name="phone_hint_touch_capture">The picture uses the screen-capture permission (Car audio page, choose Entire screen).</string>
     <string name="phone_app_row_subtitle">The phone\'s own screen, for apps AARE can\'t host</string>
+
+    <!-- standalone: launching ordinary phone apps on the car screen (root/Shizuku, parked only) -->
+    <string name="standalone_section_title">Apps on the car screen (advanced)</string>
+    <string name="standalone_section_warning">These are not Android Auto apps: AARE shows their normal phone screen, only while parked, and needs root or Shizuku. Use at your own risk.</string>
+    <string name="standalone_toggle_title">Launch phone apps on the car screen</string>
+    <string name="standalone_toggle_subtitle">Pick the apps below. Shown only when parked.</string>
+    <string name="standalone_need_root">Needs root or Shizuku. Set one up in Audio settings, then come back.</string>
+    <string name="standalone_not_native">Not an Android Auto app · parked use</string>
+    <string name="standalone_starting">Starting…</string>
+    <string name="standalone_paused_driving">Paused while driving.</string>
+    <!-- browser: the in-car WebView browser -->
+    <string name="browser_app_label">Browser</string>
+    <string name="browser_app_row_subtitle">A web browser on the car screen, for when you\'re parked</string>
+    <string name="browser_url_label">Home page</string>
+    <string name="browser_hint_parked">The browser is paused while driving.</string>
+    <string name="browser_paused_driving">The browser is paused while driving.</string>
+    <string name="browser_forward">Forward</string>
+    <string name="browser_reload">Reload</string>
+    <string name="browser_home">Home page</string>
+    <string name="browser_address_hint">Search or type a web address</string>
 
     <!-- assistant: voice assistant settings and bar -->
     <string name="assistant_settings_title">Voice assistant</string>
@@ -220,6 +327,14 @@
     <string name="notif_channel_connection">Car connection</string>
     <string name="notif_action_stop">Stop</string>
     <string name="notif_action_trust">Trust</string>
+    <string name="notif_action_download_cert">Download certificate</string>
+    <string name="notif_cert_download_title">Head unit rejected AARE\'s certificate</string>
+    <string name="notif_cert_download_message">This head unit only accepts Google\'s certificate. Download the one from the latest Android Auto app, then reconnect.</string>
+    <string name="notif_cert_download_progress">Downloading Android Auto\'s certificate…</string>
+    <string name="notif_cert_download_ready_title">Certificate ready</string>
+    <string name="notif_cert_download_ready_message">Android Auto\'s certificate was added. Reconnect to the head unit to use it.</string>
+    <string name="notif_cert_download_reconnecting">Android Auto\'s certificate was added. Reconnecting to the head unit…</string>
+    <string name="notif_cert_download_failed">Couldn\'t download the certificate: %1$s</string>
     <string name="notif_status_connecting_wirelessly">Connecting wirelessly…</string>
     <string name="notif_status_not_connected">Not connected</string>
     <string name="notif_keeping_consent_suffix">%1$s · keeping the screen-capture consent for car audio (Stop releases it)</string>
@@ -261,6 +376,7 @@
     <string name="dash_menu_apps">Apps</string>
     <string name="dash_menu_home">Home</string>
     <string name="dash_menu_back">Back</string>
+    <string name="dash_menu_exit_to_car">Exit to car</string>
 
     <!-- nav: navigation feature (dashboard card and templates) -->
     <string name="nav_dashboard_no_app_title">No navigation app</string>
@@ -291,6 +407,34 @@
     <string name="media_action_pause">Pause</string>
     <string name="media_action_play">Play</string>
     <string name="media_queue_empty">The queue is empty</string>
+    <string name="media_action_retry">Retry</string>
+    <!-- Button opening the media app's own fix (e.g. its sign-in screen) when the app gave no label. -->
+    <string name="media_error_fix">Fix</string>
+    <string name="media_error_no_service">%1$s has no media service</string>
+    <string name="media_error_not_responding">%1$s is not responding</string>
+    <string name="media_error_refused">%1$s did not accept the connection</string>
+    <string name="media_error_connect">Could not connect to %1$s</string>
+    <string name="media_error_open">Could not open %1$s</string>
+    <string name="media_error_not_connected">%1$s is not connected</string>
+    <string name="media_error_stopped">%1$s stopped</string>
+    <string name="media_error_load_list">Could not load this list</string>
+    <string name="media_error_search">Search failed</string>
+    <string name="media_error_reported">%1$s reported an error</string>
+    <!-- Errors a media app reports by code. All take the same arguments, %1$s the app and %2$d the
+         error code, so each may use either or neither. -->
+    <string name="media_error_sign_in">Sign in to %1$s on your phone</string>
+    <string name="media_error_premium">%1$s needs a premium account</string>
+    <string name="media_error_stream_limit">Too many devices are streaming</string>
+    <string name="media_error_parental">Blocked by parental controls</string>
+    <string name="media_error_region">Not available in your region</string>
+    <string name="media_error_skip_limit">Skip limit reached</string>
+    <string name="media_error_setup">Finish setting up %1$s on your phone</string>
+    <string name="media_error_end_of_playlist">End of the playlist</string>
+    <string name="media_error_permission">%1$s does not allow AARE to browse it</string>
+    <string name="media_error_io">Network or storage problem</string>
+    <string name="media_error_not_supported">Not supported by %1$s</string>
+    <string name="media_error_disconnected">%1$s disconnected</string>
+    <string name="media_error_code">%1$s reported an error (%2$d)</string>
 
     <!-- msg: messaging screen (notifications-based conversations) -->
     <string name="msg_no_access">Give AARE notification access on the phone to see messages here</string>
@@ -329,6 +473,8 @@
     <string name="phone_status_wifi">Wi-Fi</string>
     <string name="phone_status_charging">Charging</string>
     <string name="phone_incoming_call">Incoming call</string>
+    <!-- The call card's name for an ongoing call whose caller is unknown (a noun). -->
+    <string name="phone_call_fallback_name">Call</string>
     <string name="phone_action_decline">Decline</string>
     <string name="phone_action_answer">Answer</string>
     <string name="phone_in_call_elapsed">%1$s · %2$s</string>
@@ -415,4 +561,17 @@
     <string name="obd_connect">Connect the OBD2 adapter</string>
     <string name="obd_disconnect">Disconnect the OBD2 adapter</string>
     <string name="obd_no_car">Adapter found, the car isn\'t answering (ignition off?)</string>
+    <!-- tpl: fallbacks in car apps' templates, when the app gives no text of its own -->
+    <string name="tpl_no_results">No results</string>
+    <string name="tpl_parked_only">Available when parked</string>
+    <string name="tpl_sign_in_parked_only">You can sign in when parked</string>
+    <string name="tpl_password_hint">Password</string>
+
+    <!-- carapp: errors of a hosted car app (Android for Cars App Library), shown on the car screen -->
+    <string name="carapp_error_start">Could not start %1$s</string>
+    <string name="carapp_error_refused">%1$s refused the connection</string>
+    <string name="carapp_error_api_level">%1$s needs car API level %2$d; this host supports %3$d</string>
+    <string name="carapp_error_stopped">%1$s stopped</string>
+    <string name="carapp_error_google_only">%1$s only accepts Google\'s Android Auto. It needs to allow AARE (see the app list on the phone).</string>
+    <string name="carapp_error_cant_start">%1$s couldn\'t start: %2$s</string>
 </resources>

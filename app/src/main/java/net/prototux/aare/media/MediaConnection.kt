@@ -47,6 +47,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
+import net.prototux.aare.R
 
 /**
  * Our one media3 [MediaBrowser] connection to [app], which works for media3 MediaLibraryService
@@ -84,6 +85,9 @@ internal class MediaConnection(
     override val state: StateFlow<SourceState> = _state.asStateFlow()
 
     private var browser: MediaBrowser? = null
+
+    /** Our browser is connected; [status] may still be [Status.Connecting] (root loading) or [Status.Failed] (root failed). */
+    val connected: Boolean get() = browser?.isConnected == true
 
     /** The app is a media3 MediaLibraryService, from its manifest (not [MediaBrowser.getConnectedToken]). */
     private var library = false
@@ -144,14 +148,14 @@ internal class MediaConnection(
                 .buildAsync()
         } catch (e: IllegalArgumentException) {
             // the service is gone (app updated or disabled since discovery)
-            fail("${app.label} has no media service")
+            fail(context.getString(R.string.media_error_no_service, app.label))
             return
         }
         val b = try {
             withTimeout(CONNECT_TIMEOUT_MS) { future.await() }
         } catch (e: TimeoutCancellationException) {
             MediaController.releaseFuture(future)
-            fail("${app.label} is not responding")
+            fail(context.getString(R.string.media_error_not_responding, app.label))
             return
         } catch (e: CancellationException) {
             MediaController.releaseFuture(future)
@@ -161,10 +165,10 @@ internal class MediaConnection(
             Log.w(TAG, "connect ${app.packageName} failed: $e")
             MediaController.releaseFuture(future)
             if (e is SecurityException) {
-                _status.value = Status.Failed(MediaError("${app.label} did not accept the connection"), refused = true)
+                _status.value = Status.Failed(MediaError(context.getString(R.string.media_error_refused, app.label)), refused = true)
                 net.prototux.aare.host.NativeCompat.refusedNow(context, app.packageName, app.label, "media browser refused")
             }
-            else fail("Could not connect to ${app.label}")
+            else fail(context.getString(R.string.media_error_connect, app.label))
             return
         }
         if (released) {
@@ -205,7 +209,7 @@ internal class MediaConnection(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (browser === b) fail("Could not open ${app.label}")
+            if (browser === b) fail(context.getString(R.string.media_error_open, app.label))
             return
         }
         if (browser !== b) return
@@ -261,6 +265,9 @@ internal class MediaConnection(
         _status.value = Status.Failed(MediaError(message))
     }
 
+    /** The error for a list that failed without the app saying why. */
+    fun loadListError() = MediaError(context.getString(R.string.media_error_load_list))
+
     /** One page of [parentId]'s children. Throws [BrowseException]. */
     suspend fun children(parentId: String, page: Int, pageSize: Int): List<MediaItem> {
         val b = connected()
@@ -269,7 +276,7 @@ internal class MediaConnection(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            throw BrowseException(MediaError("Could not load this list"))
+            throw BrowseException(loadListError())
         }
         if (result.resultCode != LibraryResult.RESULT_SUCCESS) throw BrowseException(errorOf(result))
         return result.value.orEmpty()
@@ -289,7 +296,7 @@ internal class MediaConnection(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            throw BrowseException(MediaError("Search failed"))
+            throw BrowseException(MediaError(context.getString(R.string.media_error_search)))
         }
         if (started.resultCode != LibraryResult.RESULT_SUCCESS) {
             notified.cancel()
@@ -301,7 +308,7 @@ internal class MediaConnection(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            throw BrowseException(MediaError("Search failed"))
+            throw BrowseException(MediaError(context.getString(R.string.media_error_search)))
         }
         if (result.resultCode != LibraryResult.RESULT_SUCCESS) throw BrowseException(errorOf(result))
         result.value.orEmpty()
@@ -370,7 +377,7 @@ internal class MediaConnection(
     }
 
     private fun connected(): MediaBrowser =
-        browser?.takeIf { it.isConnected } ?: throw BrowseException(MediaError("${app.label} is not connected"))
+        browser?.takeIf { it.isConnected } ?: throw BrowseException(MediaError(context.getString(R.string.media_error_not_connected, app.label)))
 
     // ------------------------------------------------------------- transport (PlaybackSource)
 
@@ -424,7 +431,7 @@ internal class MediaConnection(
         override fun onError(controller: MediaController, sessionError: SessionError) {
             val (label, intent) = errorAction(sessionError.extras)
             notice = MediaError(sessionError.message.takeIf { it.isNotBlank() && it != DEFAULT_SESSION_MESSAGE }
-                ?: errorText(sessionError.code, app.label), label, intent)
+                ?: errorText(context, sessionError.code, app.label), label, intent)
             updateState()
             noticeJob?.cancel()
             noticeJob = scope.launch {
@@ -448,7 +455,7 @@ internal class MediaConnection(
         updateState()
         if (released) return
         if (reconnects >= MAX_RECONNECTS) {
-            fail("${app.label} stopped")
+            fail(context.getString(R.string.media_error_stopped, app.label))
             return
         }
         _status.value = Status.Connecting
@@ -480,7 +487,7 @@ internal class MediaConnection(
         )
         val error = b.playerError?.let { e ->
             val (label, intent) = errorAction(e.extras)
-            MediaError(e.message?.takeIf { it.isNotBlank() } ?: errorText(e.errorCode, app.label), label, intent)
+            MediaError(e.message?.takeIf { it.isNotBlank() } ?: errorText(context, e.errorCode, app.label), label, intent)
         } ?: notice
         _state.value = SourceState(
             info = info,
@@ -553,7 +560,7 @@ internal class MediaConnection(
 
     private fun errorOf(result: LibraryResult<*>): MediaError {
         val se = result.sessionError
-        val message = se?.message?.takeIf { it.isNotBlank() && it != DEFAULT_SESSION_MESSAGE } ?: errorText(result.resultCode, app.label)
+        val message = se?.message?.takeIf { it.isNotBlank() && it != DEFAULT_SESSION_MESSAGE } ?: errorText(context, result.resultCode, app.label)
         val (label, intent) = errorAction(se?.extras)
         return MediaError(message, label, intent)
     }

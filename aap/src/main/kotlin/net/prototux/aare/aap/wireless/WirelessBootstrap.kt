@@ -9,6 +9,7 @@ import aap_protobuf.aaw.WifiStartRequestOuterClass.WifiStartRequest
 import aap_protobuf.aaw.WifiStartResponseOuterClass.WifiStartResponse
 import aap_protobuf.aaw.WifiVersionRequestOuterClass.WifiVersionRequest
 import aap_protobuf.aaw.WifiVersionResponseOuterClass.WifiVersionResponse
+import aap_protobuf.aaw.WifiVersionResponseOuterClass.WppWifiDeviceInfo
 import com.google.protobuf.InvalidProtocolBufferException
 import net.prototux.aare.aap.AapLog
 import java.io.IOException
@@ -46,8 +47,16 @@ sealed interface JoinResult {
     class Failed(val status: Int, val message: String) : JoinResult
 }
 
-class WirelessBootstrapException(message: String, val status: Int = WppStatus.WIFI_NETWORK_UNAVAILABLE, cause: Throwable? = null) :
-    Exception(message, cause)
+class WirelessBootstrapException(
+    message: String,
+    val status: Int = WppStatus.WIFI_NETWORK_UNAVAILABLE,
+    cause: Throwable? = null,
+    /**
+     * Failed before the head unit told us its endpoint and network (it hung up, went silent,
+     * or sent something unusable): a car that isn't ready yet, so trying again later can work.
+     */
+    val whileNegotiating: Boolean = false,
+) : Exception(message, cause)
 
 /**
  * Phone side of the Bluetooth RFCOMM bootstrap of wireless Android Auto: learn the head unit's
@@ -62,7 +71,8 @@ class WirelessBootstrapException(message: String, val status: Int = WppStatus.WI
  * Threads: a reader thread answers pings at once and queues everything else for [run]; while
  * the phone joins the network a keepalive thread pings the head unit, because some cars give up
  * on a silent RFCOMM link within ~15 s and the user may still be looking at Android's
- * "connect to device" dialog.
+ * "connect to device" dialog. After a WifiVersionRequest a pinger thread does that instead, for
+ * the rest of the link.
  */
 class WirelessBootstrap(
     private val input: InputStream,
@@ -108,6 +118,20 @@ class WirelessBootstrap(
         val holdLink: Boolean = true,
         /** Sent as device_serial in WifiVersionResponse, like the official phone; null to omit. */
         val deviceSerial: String? = null,
+        /**
+         * Sent as phone_info.instance_id in WifiVersionResponse, like the official phone; null omits
+         * phone_info. Google's receiver library drops every message from a phone without it except
+         * pings and version responses.
+         */
+        val instanceId: String? = null,
+        /** phone_info.device_name (the head unit may show it); only sent with [instanceId]. */
+        val deviceName: String? = null,
+        /**
+         * After answering a WifiVersionRequest, send a WifiPingRequest this often for the rest of the
+         * link (Android Auto: 1 s; Google's receiver library closes the link after 10 s without one);
+         * 0 disables.
+         */
+        val pingIntervalMs: Long = 1_000,
     )
 
     enum class State { NEW, NEGOTIATING, JOINING, READY, DONE, FAILED }
@@ -127,6 +151,8 @@ class WirelessBootstrap(
     private var lastWriteNs = 0L
     /** Set once the head unit hung up; later sends are skipped. */
     @Volatile private var linkEnded = false
+    /** The link pinger runs (see [Options.pingIntervalMs]). */
+    private var linkPinging = false
 
     /**
      * Runs the bootstrap: returns once the link ended after a successful [Listener.onReady] (or
@@ -173,7 +199,9 @@ class WirelessBootstrap(
         if (!closed.compareAndSet(false, true)) return
         runCatching { input.close() }
         runCatching { output.close() }
-        inbox.put(Inbound.End(null))
+        // offer, not put: the queue is unbounded, and put() throws when close() runs on an
+        // interrupted thread (an AAP session closing from its own timer).
+        inbox.offer(Inbound.End(null))
     }
 
     // ---- phase 1: learn the endpoint and the credentials ----
@@ -259,16 +287,39 @@ class WirelessBootstrap(
                 (if (request.hasSupportedWifiChannelType()) " channelType=${request.supportedWifiChannelType}" else "") +
                 (if (request.hasWppInfo()) " (offers WPP over TCP at ${request.wppInfo.ipAddress}:${request.wppInfo.port}, unsupported)" else ""))
         }
-        // Gearhead's answer: echo the version, the device serial, and the Wi-Fi channel type the
-        // head unit said it supports. Some strict OEM head units (e.g. Toyota, #46) withhold the
-        // WifiStartRequest until they get a satisfactory response, not just a bare SUCCESS.
+        // Gearhead's answer: echo the version, the device serial, phone_info and the Wi-Fi channel
+        // type the head unit said it supports. Some strict OEM head units (e.g. Toyota, #46) withhold
+        // the WifiStartRequest until they get a satisfactory response, not just a bare SUCCESS.
         val response = WifiVersionResponse.newBuilder()
             .setMajor(request?.takeIf { it.hasMajor() }?.major ?: 1)
             .setMinor(request?.takeIf { it.hasMinor() }?.minor ?: 0)
             .setStatus(WppStatus.SUCCESS)
         options.deviceSerial?.let { response.setDeviceSerial(it) }
+        // No bluetooth_address: reading the phone's own MAC needs the privileged LOCAL_MAC_ADDRESS
+        // permission, which AARE does not request; the receiver knows the link by its RFCOMM peer address.
+        options.instanceId?.let { id ->
+            response.setDeviceInfo(WppWifiDeviceInfo.newBuilder().setDeviceId(id).apply { options.deviceName?.let { deviceName = it } })
+        }
         request?.takeIf { it.hasSupportedWifiChannelType() }?.let { response.setSelectedWifiChannelType(it.supportedWifiChannelType) }
         send(WppMessageId.VERSION_RESPONSE, response.build().toByteArray())
+        startLinkPinger()
+    }
+
+    /**
+     * Pings the head unit until the link ends, as Android Auto does after the version exchange (see
+     * [Options.pingIntervalMs]); head units that send no WifiVersionRequest get none.
+     */
+    private fun startLinkPinger() {
+        if (options.pingIntervalMs <= 0 || linkPinging) return
+        linkPinging = true
+        log.i("wireless: pinging the head unit every ${options.pingIntervalMs} ms")
+        thread(name = "wpp-ping", isDaemon = true) {
+            while (!linkEnded && !closed.get()) {
+                Thread.sleep(options.pingIntervalMs)
+                val ping = WifiPingRequest.newBuilder().setTimestamp(System.currentTimeMillis()).build()
+                sendQuietly(WppMessageId.PING_REQUEST, ping.toByteArray())
+            }
+        }
     }
 
     private fun parseCredentials(payload: ByteArray): WifiCredentials {
@@ -330,7 +381,7 @@ class WirelessBootstrap(
         private val stopped = CountDownLatch(1)
 
         fun start() {
-            if (options.keepaliveIntervalMs <= 0) return
+            if (options.keepaliveIntervalMs <= 0 || linkPinging) return
             thread(name = "wpp-keepalive", isDaemon = true) {
                 while (!stopped.await(options.keepaliveIntervalMs, TimeUnit.MILLISECONDS) && !linkEnded && !closed.get()) {
                     val ping = WifiPingRequest.newBuilder().setTimestamp(System.currentTimeMillis()).build()
@@ -352,7 +403,7 @@ class WirelessBootstrap(
                     return
                 }
                 is Inbound.Message -> when (event.frame.id) {
-                    WppMessageId.INFO_RESPONSE, WppMessageId.PING_RESPONSE -> log.d("wireless: late ${event.frame}")
+                    WppMessageId.INFO_RESPONSE -> log.d("wireless: late ${event.frame}")
                     else -> onOtherMessage(event.frame)
                 }
             }
@@ -386,14 +437,14 @@ class WirelessBootstrap(
                     // Answered here so pings are answered even while connectWifi() blocks.
                     sendQuietly(WppMessageId.PING_RESPONSE, frame.payload)
                 } else {
-                    inbox.put(Inbound.Message(frame))
+                    inbox.offer(Inbound.Message(frame))
                 }
             }
         } catch (e: IOException) {
             if (!closed.get()) error = e
         }
         linkEnded = true
-        inbox.put(Inbound.End(error))
+        inbox.offer(Inbound.End(error))
     }
 
     private fun send(id: Int, payload: ByteArray) {
@@ -442,7 +493,8 @@ class WirelessBootstrap(
     }
 
     private fun fail(message: String, status: Int = WppStatus.WIFI_NETWORK_UNAVAILABLE, cause: Throwable? = null) =
-        WirelessBootstrapException(message, status, cause).also { log.e("wireless: $message", cause) }
+        WirelessBootstrapException(message, status, cause, whileNegotiating = state == State.NEGOTIATING)
+            .also { log.e("wireless: $message", cause) }
 
     private fun now() = System.nanoTime() / 1_000_000
 
