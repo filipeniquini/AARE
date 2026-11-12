@@ -128,6 +128,10 @@ object ObdReader {
                 sleep(if (failures >= ATTEMPTS) SLOW_RETRY_MS else RETRY_MS)
                 continue
             }
+            // Stopped while it connected (the car left, the driver's button): let go at once. It
+            // held the adapter through the whole set-up, and the next session's reader, which
+            // gets one connection at a time, found it busy.
+            if (!alive(g)) { x.close(); break }
             if (failures >= ATTEMPTS) log("OBD2: adapter found on a later try")
             failures = 0
             link = x

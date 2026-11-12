@@ -58,13 +58,17 @@ object PhoneApps {
 
     // ---------------------------------------------------------------- the phone's apps
 
-    /** Launchable apps on the phone (package manager work: off the main thread). */
-    fun query(context: Context, iconSizePx: Int): List<App> {
+    /**
+     * Launchable apps on the phone (package manager work: off the main thread); with [only], just
+     * those packages: drawing an icon for every app on the phone to keep a handful was most of
+     * the work each time the car's app list was refreshed.
+     */
+    fun query(context: Context, iconSizePx: Int, only: Set<String>? = null): List<App> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         return pm.queryIntentActivities(intent, 0).mapNotNull { ri ->
             val ai = ri.activityInfo ?: return@mapNotNull null
-            if (ai.packageName == context.packageName) return@mapNotNull null
+            if (ai.packageName == context.packageName || (only != null && ai.packageName !in only)) return@mapNotNull null
             val icon = runCatching { ri.loadIcon(pm).toBitmap(iconSizePx) }.getOrNull()
             App(ComponentName(ai.packageName, ai.name), ri.loadLabel(pm).toString(), icon, ai.applicationInfo.category)
         }.distinctBy { it.component.packageName }
@@ -140,6 +144,8 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
      * learns whether it was just made (true) or already there, with its apps running.
      */
     fun attach(context: Context, surface: Surface, width: Int, height: Int, dpi: Int, then: (fresh: Boolean) -> Unit = {}) = worker.execute {
+        // The view went away before its turn came (screens switched quickly): nothing to show in.
+        if (!surface.isValid) return@execute
         shownIn = surface
         val s = bind(context) ?: run { _ready.value = false; return@execute }
         try {

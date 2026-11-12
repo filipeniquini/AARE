@@ -994,7 +994,7 @@ private fun BarSection(settings: Settings, l: LauncherLists, hidden: Set<String>
         value = withContext(Dispatchers.IO) {
             val picked = settings.phoneAppsShown
             if (picked.isEmpty()) emptyList()
-            else net.prototux.aare.apps.PhoneApps.query(ctx, 96).filter { it.component.packageName in picked }
+            else net.prototux.aare.apps.PhoneApps.query(ctx, 96, only = picked)
                 .distinctBy { it.component.packageName }.map { Triple(it.component.packageName, it.label, it.icon) }
         }
     }

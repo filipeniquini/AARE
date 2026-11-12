@@ -678,6 +678,15 @@ class CarSession(
         audioOuts.remove(channel.streamType)?.stop()
         audioOuts[channel.streamType] = CarAudioOut(source, channel, if (guidance) guidanceFocus else mediaFocusRequests, onFailed = {
             main.post {
+                // Just restarted by the silence watch: the old helper was still going away and the
+                // new one couldn't start (2026-11-12 heavy test: the car lost its sound for good).
+                // The same method gets one more try a moment later instead of being written off.
+                if (captureRestartPending) {
+                    captureRestartPending = false
+                    DiagLog.add("car audio: ${method.label} didn't restart at once, trying again")
+                    main.postDelayed({ startAudio(channel) }, CAPTURE_RETRY_MS)
+                    return@post
+                }
                 DiagLog.add("car audio: ${method.label} failed, trying the next method")
                 failedCapture += method
                 startAudio(channel)
@@ -695,6 +704,8 @@ class CarSession(
     private var silentSinceMs = 0L
     private var lastCaptureRestartMs = 0L
     private var captureRestarts = 0
+    /** The watch just restarted the capture: a failure now is the old helper's, not the method's. */
+    private var captureRestartPending = false
 
     private val silenceWatch = object : Runnable {
         override fun run() {
@@ -712,7 +723,7 @@ class CarSession(
                     "phone sound goes to ${soundRoutes()}; restarting the capture ($captureRestarts/$MAX_CAPTURE_RESTARTS)")
                 unmuteMusicForCar()
                 val channel = audio.firstOrNull { it.streamType == AudioStreamType.AUDIO_STREAM_MEDIA }
-                if (channel != null) { startAudio(channel); return } // startAudio schedules the next check
+                if (channel != null) { captureRestartPending = true; startAudio(channel); return } // startAudio schedules the next check
             }
             main.postDelayed(this, SILENCE_CHECK_MS)
         }
@@ -776,6 +787,7 @@ class CarSession(
     /** The car takes the phone's sound now: music held at connect plays on. */
     private fun carAudioReady() {
         carAudioCapturing = true
+        captureRestartPending = false
         unmuteMusicForCar()
         main.removeCallbacks(holdMusic)
         if (pausedUntilCarAudio) {
@@ -797,17 +809,24 @@ class CarSession(
         val am = context.getSystemService(android.media.AudioManager::class.java) ?: return
         if (!am.isStreamMute(android.media.AudioManager.STREAM_MUSIC)) return
         runCatching { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_UNMUTE, 0) }
-            .onSuccess { musicUnmutedForCar = true; DiagLog.add("car audio: the phone's music was muted, unmuted for the car") }
+            .onSuccess {
+                musicUnmutedForCar = true
+                volumeAfterUnmute = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+                DiagLog.add("car audio: the phone's music was muted, unmuted for the car")
+            }
             .onFailure { DiagLog.add("car audio: the phone's music is muted and can't be unmuted (${it.message})") }
     }
 
     /** Whether [unmuteMusicForCar] unmuted the music, to mute it again when the car goes. */
     private var musicUnmutedForCar = false
+    private var volumeAfterUnmute = 0
 
     private fun muteMusicAgain() {
         if (!musicUnmutedForCar) return
         musicUnmutedForCar = false
         val am = context.getSystemService(android.media.AudioManager::class.java) ?: return
+        // Only as it was left: a volume the user set during the drive is theirs.
+        if (am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) != volumeAfterUnmute) return
         runCatching { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, 0) }
     }
 
@@ -995,7 +1014,8 @@ class CarSession(
         private const val HOLD_MUSIC_MS = 20_000L
         /** The music watch ([silenceWatch]): how often, how long silent before acting, and how many restarts at most. */
         private const val SILENCE_CHECK_MS = 2_000L
-        private const val SILENT_MUSIC_MS = 6_000L
+        private const val SILENT_MUSIC_MS = 12_000L
+        private const val CAPTURE_RETRY_MS = 2_000L
         private const val CAPTURE_RESTART_GAP_MS = 30_000L
         private const val MAX_CAPTURE_RESTARTS = 3
         /** How long the car gets to answer an audio focus request before the sound plays anyway. */

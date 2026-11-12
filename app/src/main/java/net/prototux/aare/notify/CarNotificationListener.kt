@@ -124,15 +124,18 @@ class CarNotificationListener : NotificationListenerService() {
      * ([net.prototux.aare.Settings.lastPhoneMedia]), for the car to start again when it connects.
      */
     private fun notePlaying(sbn: StatusBarNotification) {
-        if (sbn.packageName == packageName) return
+        // Players repost their notification at every change: the app already noted needs no more work.
+        if (sbn.packageName == packageName || sbn.packageName == notedPlaying) return
         val token = runCatching {
             @Suppress("DEPRECATION") sbn.notification.extras.getParcelable<android.media.session.MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
         }.getOrNull() ?: return
         val playing = runCatching {
             android.media.session.MediaController(this, token).playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING
         }.getOrDefault(false)
-        if (playing) net.prototux.aare.Settings(this).lastPhoneMedia = sbn.packageName
+        if (playing) { net.prototux.aare.Settings(this).lastPhoneMedia = sbn.packageName; notedPlaying = sbn.packageName }
     }
+
+    private var notedPlaying: String? = null
 
     /** The conversations currently in the notification shade, newest first; all apps if [packageName] is null. */
     fun conversations(packageName: String? = null): List<Conversation> =

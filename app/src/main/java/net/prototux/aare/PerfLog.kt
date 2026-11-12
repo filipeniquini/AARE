@@ -27,6 +27,7 @@ import java.util.Locale
 object PerfLog {
     private const val PERIOD_MS = 5_000L
     private const val PING_MS = 200L
+    private const val PSS_EVERY = 6
     private const val MAX_BYTES = 4L * 1024 * 1024
 
     private var thread: HandlerThread? = null
@@ -77,6 +78,8 @@ object PerfLog {
         private var lastCpuMs = Process.getElapsedCpuTime()
         private var lastWallMs = SystemClock.elapsedRealtime()
         private val startedMs = SystemClock.elapsedRealtime()
+        private var samples = 0
+        private var pssMb = 0L
 
         // Main thread lateness: a ping every PING_MS, how much later than asked it ran.
         @Volatile private var lagMaxMs = 0L
@@ -117,7 +120,10 @@ object PerfLog {
             val rt = Runtime.getRuntime()
             row["heap_mb"] = (rt.totalMemory() - rt.freeMemory()) / 1_048_576
             row["native_mb"] = Debug.getNativeHeapAllocatedSize() / 1_048_576
-            row["pss_mb"] = Debug.getPss() / 1024
+            // Reading the whole process's memory map is the costly part of a sample: every
+            // [PSS_EVERY]th one, the last figure in between.
+            if (samples++ % PSS_EVERY == 0) pssMb = Debug.getPss() / 1024
+            row["pss_mb"] = pssMb
             // The whole phone's memory: with it full, Android spends CPU (and heat) swapping.
             val phone = net.prototux.aare.host.PhoneMemory.read()
             row["phone_avail_mb"] = phone?.availableMb

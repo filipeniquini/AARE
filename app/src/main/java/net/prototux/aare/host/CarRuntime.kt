@@ -416,7 +416,7 @@ class CarRuntime(
             val chosen = settings.phoneAppsShown + (refused - setOfNotNull(dialerPackage())) + gemini + video
             val all = if (settings.phoneApps && chosen.isNotEmpty() && PhoneApps.available())
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    runCatching { PhoneApps.query(context, PHONE_APP_ICON_PX) }.getOrDefault(emptyList()).filter { it.component.packageName in chosen }
+                    runCatching { PhoneApps.query(context, PHONE_APP_ICON_PX, only = chosen) }.getOrDefault(emptyList())
                 }
             else emptyList()
             applyApps(found, messaging, all, refused)

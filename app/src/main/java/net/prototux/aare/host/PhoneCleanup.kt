@@ -31,6 +31,7 @@ object PhoneMemory {
  */
 object PhoneCleanup {
     private const val SETTLE_MS = 2_000L
+    private const val RETRY_MS = 3_000L
     /** Never paused: AARE, Shizuku (AARE's rights), the system and Google Play services. */
     val NEVER_PAUSED = setOf("net.prototux.aare", "android", "moe.shizuku.privileged.api", "com.google.android.gms", "com.google.android.gsf")
     /** One at a time, in order: a quick reconnection unpauses, then pauses again. */
@@ -50,10 +51,13 @@ object PhoneCleanup {
             val before = PhoneMemory.read()
             // Remembered before pausing: if AARE is gone when the car leaves, the next start frees them.
             settings.pausedNow = settings.pausedNow + toPause
-            val result = ShellOnce.call(app) { shell ->
+            fun run() = ShellOnce.call(app) { shell ->
                 val paused = toPause.filter { shell.pauseApp(it, true) }
                 paused to (if (clean) shell.killAllBackground(keep.toTypedArray()) else -1)
             }
+            // Right after a reconnection the helper wasn't there yet twice (2026-11-11 drive, "no
+            // Shizuku" a second after the session started): one more try a moment later.
+            val result = run() ?: run { Thread.sleep(RETRY_MS); run() }
             if (result == null) { DiagLog.add("phone clean-up: no Shizuku"); return@execute }
             Thread.sleep(SETTLE_MS)
             val after = PhoneMemory.read()
