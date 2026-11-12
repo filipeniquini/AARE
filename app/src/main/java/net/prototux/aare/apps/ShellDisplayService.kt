@@ -47,6 +47,7 @@ class ShellDisplayService : IShellDisplay.Stub {
             val d = dm.createVirtualDisplay("$NAME $slot", width, height, densityDpi, surface, FLAGS)
             displays[slot] = d
             keyboardHere(d.display.displayId)
+            keepAwake(slot, d.display.displayId)
             d.display.displayId
         } catch (e: Exception) {
             Log.w(TAG, "can't create the virtual display", e)
@@ -206,7 +207,54 @@ class ShellDisplayService : IShellDisplay.Stub {
     }.getOrNull()?.also { atmCache = it }
 
     override fun release(slot: Int) {
+        awake.remove(slot)?.let { runCatching { it.release() } }
         displays.remove(slot)?.release()
+    }
+
+    private val awake = java.util.concurrent.ConcurrentHashMap<Int, android.os.PowerManager.WakeLock>()
+
+    /**
+     * The display has a power group of its own (OWN_DISPLAY_GROUP), which Android put to sleep
+     * after some 10 s without a touch on it: the map card, never touched while driving, went black
+     * on the car and came back for a few seconds after each touch (2026-11-12). A screen wake lock
+     * on that display keeps its group awake, as a navigation app keeps a screen on; the phone's
+     * own screen is another group and stays as it is.
+     */
+    @SuppressLint("PrivateApi")
+    private fun keepAwake(slot: Int, displayId: Int) {
+        awake.remove(slot)?.let { runCatching { it.release() } }
+        runCatching {
+            @Suppress("DEPRECATION")
+            val level = android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
+            val pm = powerManager()
+            val lock = HiddenApiBypass.invoke(pm.javaClass, pm, "newWakeLock", level, "aare:apps-display-$slot", displayId)
+                as android.os.PowerManager.WakeLock
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            awake[slot] = lock
+        }.onFailure { Log.w(TAG, "can't keep display $displayId awake", it) }
+    }
+
+    /** A PowerManager that says "the shell" (the wake lock's package must be this uid's). */
+    @SuppressLint("PrivateApi")
+    private fun powerManager(): android.os.PowerManager {
+        val shell = ShellContext(context ?: systemContext())
+        fun service(name: String, stub: String): Any? = runCatching {
+            val binder = HiddenApiBypass.invoke(Class.forName("android.os.ServiceManager"), null, "getService", name)
+            HiddenApiBypass.invoke(Class.forName("$stub\$Stub"), null, "asInterface", binder)
+        }.getOrNull()
+        val c = android.os.PowerManager::class.java.declaredConstructors.first { it.parameterTypes.firstOrNull() == Context::class.java }
+        c.isAccessible = true
+        val args = c.parameterTypes.map { t ->
+            when {
+                t == Context::class.java -> shell
+                t.name == "android.os.IPowerManager" -> service("power", "android.os.IPowerManager")
+                t.name == "android.os.IThermalService" -> service("thermalservice", "android.os.IThermalService")
+                t == android.os.Handler::class.java -> android.os.Handler(android.os.Looper.getMainLooper() ?: android.os.Looper.myLooper()!!)
+                else -> null
+            }
+        }
+        return c.newInstance(*args.toTypedArray()) as android.os.PowerManager
     }
 
     override fun destroy() {
@@ -326,6 +374,10 @@ class ShellDisplayService : IShellDisplay.Stub {
         const val OWN_FOCUS = 1 shl 14
         // No SHOULD_SHOW_SYSTEM_DECORATIONS: with it the phone's status bar and taskbar showed on the
         // car, and the taskbar opened any app past the car's rules.
+        // OWN_DISPLAY_GROUP gives the display a power group of its own, which [keepAwake] keeps
+        // awake (without it the map card went black some 10 s after the last touch, 2026-11-12).
+        // PUBLIC stays: on a private display Android refused the keyboard's window ("does not have
+        // access"), and nothing could be typed on the car.
         val FLAGS = PUBLIC or PRESENTATION or OWN_CONTENT_ONLY or SUPPORTS_TOUCH or DESTROY_CONTENT_ON_REMOVAL or
             TRUSTED or OWN_DISPLAY_GROUP or ALWAYS_UNLOCKED or TOUCH_FEEDBACK_DISABLED or OWN_FOCUS
     }
