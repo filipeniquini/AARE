@@ -372,7 +372,7 @@
     <string name="apps_need_shizuku">Phone apps on the car screen need Shizuku running and allowed for AARE (Car audio page).</string>
     <string name="phone_a11y_in_car_title">Touch service only in the car</string>
     <string name="phone_a11y_in_car_subtitle">AARE turns its accessibility service on when the car connects and off when it leaves (through Shizuku). Banking apps refuse to open while it is on.</string>
-    <string name="phone_apps_map_card">Big card on the GTS home screen</string>
+    <string name="phone_apps_map_card">Big card on the home screen</string>
     <string name="phone_apps_map_card_car">Car app</string>
     <string name="phone_apps_map_card_hint">A navigation app from the phone, live in the big card (it stays off the app grid). Car app: the car navigation app, such as CoMaps. Applies at the next connection.</string>
     <string name="phone_apps_section">Phone apps on the car</string>
@@ -405,7 +405,7 @@
     <string name="phone_apps_kind_other">Phone app</string>
     <string name="obd_section">Car data (OBD2)</string>
     <string name="obd_toggle_title">Read the OBD2 adapter</string>
-    <string name="obd_toggle_subtitle">Speed, revs, temperatures and fuel from a paired Bluetooth adapter (ELM327 and compatible) for the GTS car card. Read only.</string>
+    <string name="obd_toggle_subtitle">Speed, revs, temperatures and fuel from a paired Bluetooth adapter (ELM327 and compatible) for the car card on the home screen. Read only.</string>
     <string name="obd_simulated_title">Pretend adapter</string>
     <string name="obd_simulated_subtitle">A pretend car that drives a loop, to try the card without the car</string>
     <string name="obd_hint">The adapter takes one app at a time: AARE holds it only while connected to the car. Applies at the next connection.</string>

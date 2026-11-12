@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import net.prototux.aare.ui.theme.LocalCarDimens
 import androidx.compose.ui.unit.sp
 
 /** The rounded square of the CarPlay look. */
@@ -81,7 +82,10 @@ internal fun CarPlayShell(
             val content: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
                     when (val screen = state.screen) {
-                        CarScreen.Dashboard, CarScreen.MapFull -> Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(12.dp))
+                        CarScreen.Dashboard -> Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(LocalCarDimens.current.gutter))
+                        // The live map card full screen, when there is one (2026-11-12).
+                        CarScreen.MapFull -> LocalMapCard.current?.invoke(Modifier.fillMaxSize())
+                            ?: Dashboard(state, actions, navMap, Modifier.fillMaxSize().padding(LocalCarDimens.current.gutter))
                         CarScreen.Launcher -> Home(state, actions)
                         is CarScreen.App -> state.app(screen.appId)?.let { appContent(it, Modifier.fillMaxSize()) } ?: Home(state, actions)
                     }

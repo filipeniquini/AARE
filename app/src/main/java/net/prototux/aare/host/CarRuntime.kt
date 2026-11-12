@@ -507,11 +507,12 @@ class CarRuntime(
         // Every other app on the phone, on the virtual display (apps with a car UI keep that, lighter
         // and made for driving). Spotify, Waze, Google Maps… refuse AARE as a host but run here as they are.
         phoneApps.clear()
+        val cardPkg = mapCardComponent()?.packageName
         for (a in all) {
             val pkg = a.component.packageName
             if (pkg in hidden) continue
             // The big card's app lives on its own display: opening it full screen too would fight over it.
-            if (ui.gtsStyle && pkg == settings.mapCardApp) continue
+            if (pkg == cardPkg) continue
             val existing = entries.firstOrNull { it.packageName == pkg }
             if (existing != null) {
                 // A video app is worth its own screen (the video) more than the session player: swap.
@@ -639,7 +640,7 @@ class CarRuntime(
                 ui.activeMediaAppId = mediaEntryId(last)
                 settings.lastMediaApp = last
                 // A video app that played last with its picture: in the media card again.
-                if (ui.gtsStyle && ui.videoInCard == null && wantsPicture(last)) {
+                if (ui.videoInCard == null && wantsPicture(last)) {
                     val entry = ui.apps.firstOrNull { it.video && it.packageName == last }
                     if (entry != null) showVideoInCard(entry) else videoCardPending = last
                 }
@@ -809,7 +810,7 @@ class CarRuntime(
             // media card) or as sound only.
             val np = ui.nowPlaying
             val pkg = media.playback.value?.packageName
-            if (np != null && !np.playing && pkg != null && ui.gtsStyle && ui.screen == CarScreen.Dashboard && ui.videoInCard == null &&
+            if (np != null && !np.playing && pkg != null && ui.screen == CarScreen.Dashboard && ui.videoInCard == null &&
                 wantsPicture(pkg)) {
                 val entry = ui.apps.firstOrNull { it.video && it.packageName == pkg }
                 // Just connected, the mirrored apps may not be listed yet: shown once they are.
@@ -927,7 +928,8 @@ class CarRuntime(
     }
 
     private fun mapCardComponent(): android.content.ComponentName? {
-        if (!ui.gtsStyle || !settings.phoneApps || !PhoneApps.available()) return null
+        // Every style's home screen has it since 2026-11-12 (it was the GTS style's alone).
+        if (!settings.phoneApps || !PhoneApps.available()) return null
         val pkg = settings.mapCardApp.ifBlank { return null }
         return context.packageManager.getLaunchIntentForPackage(pkg)?.component
     }
@@ -956,7 +958,7 @@ class CarRuntime(
     fun Root(modifier: Modifier = Modifier) {
         val mediaApps by media.apps.collectAsState()
         CarTheme(night = ui.night, gts = ui.gtsStyle) {
-            // The GTS home screen's big card: a phone app live (Google Maps by default), when it can.
+            // The home screen's big card: a phone app live (Google Maps by default), when it can.
             val cardApp = remember(ui.gtsStyle) { mapCardComponent() }
             val mapCard: (@Composable (Modifier) -> Unit)? = cardApp?.let { component ->
                 { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card, reopen = false) }
@@ -965,7 +967,7 @@ class CarRuntime(
             val videoCard: (@Composable (Modifier) -> Unit)? = ui.videoInCard?.let { id -> phoneApps[id] }?.let { a ->
                 { mod -> PhoneAppScreen(this, a.component, PhoneApps.Kind.VIDEO, ui.drivingRestricted, mod, reopen = true, inCard = true) }
             }
-            CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else LocalCarDimens.current,
+            CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else net.prototux.aare.ui.theme.TightCarDimens,
                 net.prototux.aare.ui.car.LocalMapCard provides mapCard, net.prototux.aare.ui.car.LocalVideoCard provides videoCard) {
                 CarShell(
                     state = ui,

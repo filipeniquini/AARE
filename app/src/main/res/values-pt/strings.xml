@@ -371,7 +371,7 @@
     <string name="apps_need_shizuku">As aplicações do telemóvel no ecrã do carro precisam do Shizuku a funcionar e autorizado para a AARE (página Áudio do carro).</string>
     <string name="phone_a11y_in_car_title">Serviço de toque só no carro</string>
     <string name="phone_a11y_in_car_subtitle">A AARE liga o seu serviço de acessibilidade quando o carro se liga e desliga-o quando sai (pelo Shizuku). Aplicações de banco recusam-se a abrir enquanto está ligado.</string>
-    <string name="phone_apps_map_card">Cartão grande do ecrã inicial GTS</string>
+    <string name="phone_apps_map_card">Cartão grande do ecrã inicial</string>
     <string name="phone_apps_map_card_car">App do carro</string>
     <string name="phone_apps_map_card_hint">Uma aplicação de navegação do telemóvel, ao vivo no cartão grande (sai da grade de aplicações). App do carro: a aplicação de navegação do carro, como o CoMaps. Vale na próxima ligação.</string>
     <string name="phone_apps_section">Aplicações do telemóvel no carro</string>
@@ -404,7 +404,7 @@
     <string name="phone_apps_kind_other">Aplicação do telemóvel</string>
     <string name="obd_section">Dados do carro (OBD2)</string>
     <string name="obd_toggle_title">Ler o adaptador OBD2</string>
-    <string name="obd_toggle_subtitle">Velocidade, rotação, temperaturas e combustível de um adaptador Bluetooth emparelhado (ELM327 e compatíveis) para o cartão do carro GTS. Só leitura.</string>
+    <string name="obd_toggle_subtitle">Velocidade, rotação, temperaturas e combustível de um adaptador Bluetooth emparelhado (ELM327 e compatíveis) para o cartão do carro no ecrã inicial. Só leitura.</string>
     <string name="obd_simulated_title">Adaptador de simulação</string>
     <string name="obd_simulated_subtitle">Um carro de mentira que anda em ciclo, para testar o cartão sem o carro</string>
     <string name="obd_hint">O adaptador aceita uma aplicação de cada vez: o AARE só o usa enquanto está ligado ao carro. Vale na próxima ligação.</string>

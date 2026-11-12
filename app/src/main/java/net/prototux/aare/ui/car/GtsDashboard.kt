@@ -94,27 +94,51 @@ internal fun GtsDashboard(
         }
         else NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
         BoxWithConstraints(Modifier.weight(GTS_SIDE_WEIGHT).fillMaxHeight()) {
-        // 16:9 when there's room; on a shorter screen (the car's 149 dpi makes AARE's own bar take
-        // more of it) the player gives up height so the car card keeps its bottom row.
-        val mediaHeight = minOf(maxWidth * 9f / 16f, (maxHeight - gutter) * MEDIA_SHARE_MAX)
-        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter)) {
-            // Grey, like the car's own VW Play screens, with its insides in matching greys.
-            val c = MaterialTheme.colorScheme
-            val night = net.prototux.aare.ui.theme.LocalCarNight.current
-            // One flat color (the gradient looked heavy), the readings' boxes a step darker; at night
-            // the boxes are pure black and the card just above it.
-            Card(Modifier.weight(1f).fillMaxWidth(), background = SolidColor(if (night) CAR_CARD_NIGHT else CAR_CARD)) {
-                MaterialTheme(colorScheme = c.copy(
-                    surfaceContainerHigh = if (night) Color.Black else Color(0x33000000),
-                    surfaceContainerHighest = if (night) Color(0xFF26272B) else Color(0x40000000),
-                    onSurface = if (night) Color(0xFFE6E7EA) else Color.White,
-                    onSurfaceVariant = if (night) Color(0xFF9A9FA8) else Color(0xFFC9CCD1),
-                )) { GtsCarCard(state, Modifier.fillMaxSize()) }
-            }
-            GtsMediaCard(state, actions, Modifier.fillMaxWidth().height(mediaHeight))
+        val boxW = maxWidth
+        val boxH = maxHeight
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
+            CarInfoCard(state, Modifier.weight(1f).fillMaxWidth())
+            GtsMediaCard(state, actions, Modifier.playerSize(boxW, boxH - gutter))
         }
         }
     }
+}
+
+/**
+ * The car card (speed, then the OBD2 adapter's readings or the drive by GPS), on every style's
+ * home screen (2026-11-12). The GTS style draws it grey like the VW Play's own screens; the other
+ * styles in their own card color.
+ */
+@Composable
+internal fun CarInfoCard(state: CarUiState, modifier: Modifier) {
+    if (!net.prototux.aare.ui.theme.LocalGtsStyle.current) {
+        Card(modifier) { GtsCarCard(state, Modifier.fillMaxSize()) }
+        return
+    }
+    // Grey, like the car's own VW Play screens, with its insides in matching greys.
+    val c = MaterialTheme.colorScheme
+    val night = net.prototux.aare.ui.theme.LocalCarNight.current
+    // One flat color (the gradient looked heavy), the readings' boxes a step darker; at night
+    // the boxes are pure black and the card just above it.
+    Card(modifier, background = SolidColor(if (night) CAR_CARD_NIGHT else CAR_CARD)) {
+        MaterialTheme(colorScheme = c.copy(
+            surfaceContainerHigh = if (night) Color.Black else Color(0x33000000),
+            surfaceContainerHighest = if (night) Color(0xFF26272B) else Color(0x40000000),
+            onSurface = if (night) Color(0xFFE6E7EA) else Color.White,
+            onSurfaceVariant = if (night) Color(0xFF9A9FA8) else Color(0xFFC9CCD1),
+        )) { GtsCarCard(state, Modifier.fillMaxSize()) }
+    }
+}
+
+/**
+ * The player's card, always 16:9 (the user's rule, 2026-11-12), in every style: the column's
+ * width when that leaves the cards above it room, else smaller, centered, at the same 16:9 (on a
+ * shorter screen, such as the car's 149 dpi, the car card keeps its bottom row). Before, the GTS
+ * player gave up height at full width and stopped being 16:9 there.
+ */
+internal fun Modifier.playerSize(width: Dp, height: Dp): Modifier {
+    val h = minOf(width * 9f / 16f, height * MEDIA_SHARE_MAX)
+    return this.width(h * 16f / 9f).height(h)
 }
 
 /** The most of the right column the player may take. */

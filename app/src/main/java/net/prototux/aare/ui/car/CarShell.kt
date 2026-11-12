@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloseFullscreen
@@ -239,9 +240,9 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
     val tightBar = horizontal && conf.screenHeightDp > conf.screenWidthDp && conf.screenWidthDp < 800
     val tighterBar = tightBar && conf.screenWidthDp < 640
     // The bar's own apps: the ones chosen on the phone (Apps page), in their order, or Android
-    // Auto's set (navigation, not on the GTS home screen whose big card is the map; media; phone;
+    // Auto's set (navigation, not when the home screen's big card is a live map; media; phone;
     // settings). The media and navigation slots follow the apps in use.
-    val gts = LocalGtsStyle.current
+    val mapInCard = LocalMapCard.current != null
     val custom = state.barApps
     var chosen: List<Pair<CarAppEntry?, ImageVector>> = custom?.mapNotNull { key ->
         when (key) {
@@ -250,7 +251,7 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
             else -> state.apps.firstOrNull { it.inGrid && (it.id == key || it.packageName == key) }?.let { it to Icons.Rounded.Apps }
         }
     } ?: listOfNotNull(
-        if (!gts) nav to Icons.Rounded.Map else null,
+        if (!mapInCard) nav to Icons.Rounded.Map else null,
         media to Icons.Rounded.MusicNote,
         phone?.let { it to Icons.Rounded.Call },
         settings?.takeIf { !tighterBar }?.let { it to Icons.Rounded.Settings },
@@ -291,9 +292,9 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
             else -> RailButton(Icons.Rounded.SpaceDashboard, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
         }
         if (needsBack) RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
-        // A video app full screen goes into the home screen's media card (GTS home screen); the
-        // media widget brings it back.
-        if (LocalGtsStyle.current && current?.kind == CarAppKind.PHONE_APP && current.video)
+        // A video app full screen goes into the home screen's media card; the media widget brings
+        // it back.
+        if (current?.kind == CarAppKind.PHONE_APP && current.video)
             RailButton(Icons.Rounded.PictureInPictureAlt, stringResource(R.string.video_minimize), selected = false) { actions.minimizeVideo() }
     }
     val mic: @Composable () -> Unit = { MicButton(state.listening) { actions.assistant() } }
@@ -356,7 +357,7 @@ private fun VideoRail(state: CarUiState, actions: CarActions) {
             RailButton(Icons.Rounded.SpaceDashboard, stringResource(R.string.dash_menu_home), selected = false) { actions.goHome() }
             if (current?.kind == CarAppKind.PHONE_APP || current?.kind == CarAppKind.PHONE_SCREEN)
                 RailButton(Icons.AutoMirrored.Rounded.ArrowBack, stringResource(R.string.dash_menu_back), selected = false) { actions.back() }
-            if (LocalGtsStyle.current && current?.kind == CarAppKind.PHONE_APP && current.video)
+            if (current?.kind == CarAppKind.PHONE_APP && current.video)
                 RailButton(Icons.Rounded.PictureInPictureAlt, stringResource(R.string.video_minimize), selected = false) { actions.minimizeVideo() }
         }
     }
@@ -489,12 +490,15 @@ internal fun Dashboard(
 ) {
     val gutter = LocalCarDimens.current.gutter
     BoxWithConstraints(modifier) {
+        val boxW = maxWidth
+        val boxH = maxHeight
         val narrow = maxWidth < 560.dp
         if (maxHeight > maxWidth * 1.2f && maxHeight >= 700.dp) {
             // portrait screens (720x1280, 1080x1920…): the cards stacked, the map on top
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter)) {
                 NavCard(state, actions, navMap, Modifier.weight(1.6f).fillMaxWidth())
-                MediaCard(state, actions, compact = false, modifier = Modifier.weight(1f).fillMaxWidth())
+                MediaCard(state, actions, compact = false, modifier = Modifier.align(Alignment.CenterHorizontally).playerSize(boxW, boxH))
+                CarInfoCard(state, Modifier.weight(0.9f).fillMaxWidth())
                 val event = state.nextEvent
                 val latest = state.history.firstOrNull()
                 when {
@@ -517,26 +521,39 @@ internal fun Dashboard(
             // very wide screens (1920x720, 2560x720…): three cards side by side, like Android Auto's
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gutter)) {
                 NavCard(state, actions, navMap, Modifier.weight(1.6f).fillMaxHeight())
-                MediaCard(state, actions, compact = false, modifier = Modifier.weight(1f).fillMaxHeight())
-                val event = state.nextEvent
-                val latest = state.history.firstOrNull()
-                when {
-                    event != null -> Card(Modifier.weight(0.9f).fillMaxHeight()) { CalendarCard(event, actions::navigateTo, Modifier.fillMaxSize()) }
-                    latest != null -> Card(Modifier.weight(0.9f).fillMaxHeight(), onClick = {
-                        state.apps.firstOrNull { it.kind == CarAppKind.NOTIFICATIONS }?.let(actions::openApp)
-                    }) { LatestNotification(latest, state.drivingRestricted) }
+                // The car card over the 16:9 player.
+                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                    val boxW = maxWidth
+                    val boxH = maxHeight
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
+                        CarInfoCard(state, Modifier.weight(1f).fillMaxWidth())
+                        MediaCard(state, actions, compact = false, modifier = Modifier.playerSize(boxW, boxH - gutter))
+                    }
+                }
+                // The next event or the latest notification.
+                Column(Modifier.weight(0.9f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gutter)) {
+                    val event = state.nextEvent
+                    val latest = state.history.firstOrNull()
+                    when {
+                        event != null -> Card(Modifier.weight(1f).fillMaxWidth()) { CalendarCard(event, actions::navigateTo, Modifier.fillMaxSize()) }
+                        latest != null -> Card(Modifier.weight(1f).fillMaxWidth(), onClick = {
+                            state.apps.firstOrNull { it.kind == CarAppKind.NOTIFICATIONS }?.let(actions::openApp)
+                        }) { LatestNotification(latest, state.drivingRestricted) }
+                    }
                 }
             }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gutter)) {
                 NavCard(state, actions, navMap, Modifier.weight(1.65f).fillMaxHeight())
                 val event = state.nextEvent
-                if (event == null) {
-                    MediaCard(state, actions, compact = false, modifier = Modifier.weight(1f).fillMaxHeight())
-                } else {
-                    Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gutter)) {
-                        MediaCard(state, actions, compact = false, modifier = Modifier.weight(1.3f).fillMaxWidth())
-                        Card(Modifier.weight(1f).fillMaxWidth()) { CalendarCard(event, actions::navigateTo, Modifier.fillMaxSize()) }
+                // The car card over the 16:9 player (every style since 2026-11-12), the next event under it.
+                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                    val boxW = maxWidth
+                    val boxH = maxHeight
+                    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
+                        CarInfoCard(state, Modifier.weight(1f).fillMaxWidth())
+                        MediaCard(state, actions, compact = false, modifier = Modifier.playerSize(boxW, boxH - gutter))
+                        if (event != null) Card(Modifier.weight(0.8f).fillMaxWidth()) { CalendarCard(event, actions::navigateTo, Modifier.fillMaxSize()) }
                     }
                 }
             }
@@ -563,6 +580,9 @@ internal fun Card(
 
 @Composable
 internal fun NavCard(state: CarUiState, actions: CarActions, navMap: @Composable (CarAppEntry, Modifier) -> Unit, modifier: Modifier) {
+    // A phone navigation app live in the card (Google Maps by default), in every style since
+    // 2026-11-12 (it was the GTS home screen's alone).
+    LocalMapCard.current?.let { map -> Card(modifier) { map(Modifier.fillMaxSize()) }; return }
     val nav = state.app(state.activeNavAppId)
     val guidance = state.phoneGuidance
     Card(modifier) {
@@ -644,8 +664,19 @@ fun AppIcon(app: CarAppEntry, sizeDp: Int) {
 
 @Composable
 private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, modifier: Modifier) {
+    // A video minimized from full screen plays here, as in the GTS player; a touch brings it back.
+    val video = LocalVideoCard.current
+    if (state.videoInCard != null && video != null) {
+        Card(modifier) {
+            video(Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().clickable { actions.maximizeVideo() })
+        }
+        return
+    }
     val np = state.nowPlaying
     val media = state.app(np?.appId ?: state.activeMediaAppId)
+    // A video app playing as sound only: its picture back, here in the card.
+    val videoApp = media != null && state.apps.any { it.video && it.packageName == media.packageName }
     Card(modifier, onClick = { media?.let(actions::openApp) ?: actions.openLauncher() }) {
         if (np?.art != null && !compact) {
             Image(np.art.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.35f)
@@ -674,6 +705,10 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
                     Art(np, 72)
                     Spacer(Modifier.width(16.dp))
                     if (media != null) AppIcon(media, 28)
+                    if (videoApp) {
+                        Spacer(Modifier.weight(1f))
+                        RoundIcon(Icons.Rounded.OndemandVideo, stringResource(R.string.video_show), filled = false) { actions.showVideo() }
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 content()

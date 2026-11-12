@@ -152,7 +152,9 @@ class MainActivity : ComponentActivity() {
         // The heavy test turns the bar's recent apps off while it taps around (so it never lands
         // on a messaging app), and back afterwards.
         if (intent.hasExtra("bar_recents")) Settings(this).barRecents = intent.getIntExtra("bar_recents", 2)
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents")
+        // Tests of every style's car screen (auto, gts, carplay).
+        intent.getStringExtra("car_style")?.let { Settings(this).carStyle = it }
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
@@ -899,7 +901,7 @@ private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
             dpi = it.toInt(); settings.phoneAppsDpi = dpi
         }
         Text(stringResource(R.string.phone_apps_size_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // The GTS home screen's big card: a navigation app live in it, or the car navigation app.
+        // The home screen's big card: a navigation app live in it, or the car navigation app.
         var cardApp by remember { mutableStateOf(settings.mapCardApp) }
         val navChoices = remember {
             listOf("com.google.android.apps.maps" to "Google Maps", "com.waze" to "Waze")
@@ -985,8 +987,9 @@ private fun CarSavingSection(settings: Settings) {
 @Composable
 private fun BarSection(settings: Settings, l: LauncherLists, hidden: Set<String>, phoneScreen: Boolean) {
     val ctx = LocalContext.current
-    val gts = settings.carStyle == Settings.STYLE_GTS
-    val default = listOfNotNull(if (gts) null else Settings.BAR_NAV, Settings.BAR_MEDIA, CarRuntime.PHONE_ID, CarRuntime.SETTINGS_ID)
+    // No navigation slot when the home screen's big card is a live map (any style since 2026-11-12).
+    val mapInCard = settings.phoneApps && settings.mapCardApp.isNotBlank()
+    val default = listOfNotNull(if (mapInCard) null else Settings.BAR_NAV, Settings.BAR_MEDIA, CarRuntime.PHONE_ID, CarRuntime.SETTINGS_ID)
     var chosen by remember { mutableStateOf(settings.barApps ?: default) }
     var recents by remember { mutableStateOf(settings.barRecents) }
     // Everything the car lists (keys as the launcher order), with the mirrored phone apps chosen for it.
