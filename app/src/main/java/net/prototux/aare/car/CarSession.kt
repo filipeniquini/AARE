@@ -683,6 +683,65 @@ class CarSession(
                 startAudio(channel)
             }
         }, onCapturing = { if (!guidance) main.post { carAudioReady() } }).also { it.start() }
+        if (!guidance) { main.removeCallbacks(silenceWatch); main.postDelayed(silenceWatch, SILENCE_CHECK_MS) }
+    }
+
+    // ------------------------------------------------------------------ music the car doesn't hear
+    // 2026-11-11 drive: after the first connection of the evening, three in a row captured only
+    // silence for the whole drive while Spotify played on the phone (the right device, any car
+    // source): nothing went to the car. The capture is now restarted when that happens, and the
+    // log says where the phone was sending its sound, to find the cause.
+
+    private var silentSinceMs = 0L
+    private var lastCaptureRestartMs = 0L
+    private var captureRestarts = 0
+
+    private val silenceWatch = object : Runnable {
+        override fun run() {
+            val out = audioOuts[AudioStreamType.AUDIO_STREAM_MEDIA] ?: return
+            val now = android.os.SystemClock.elapsedRealtime()
+            val playing = media.playback.value?.playing == true && !pausedUntilCarAudio
+            if (!playing || out.isPlaying) silentSinceMs = 0L
+            else if (silentSinceMs == 0L) silentSinceMs = now
+            if (silentSinceMs != 0L && now - silentSinceMs > SILENT_MUSIC_MS &&
+                captureRestarts < MAX_CAPTURE_RESTARTS && now - lastCaptureRestartMs > CAPTURE_RESTART_GAP_MS) {
+                captureRestarts++
+                lastCaptureRestartMs = now
+                silentSinceMs = 0L
+                DiagLog.add("car audio: ${media.playback.value?.packageName} plays but the capture hears only silence; " +
+                    "phone sound goes to ${soundRoutes()}; restarting the capture ($captureRestarts/$MAX_CAPTURE_RESTARTS)")
+                unmuteMusicForCar()
+                val channel = audio.firstOrNull { it.streamType == AudioStreamType.AUDIO_STREAM_MEDIA }
+                if (channel != null) { startAudio(channel); return } // startAudio schedules the next check
+            }
+            main.postDelayed(this, SILENCE_CHECK_MS)
+        }
+    }
+
+    /** Where the phone's players send their sound now, and the outputs it has, for the log. */
+    private fun soundRoutes(): String = runCatching {
+        val am = context.getSystemService(android.media.AudioManager::class.java)
+        val players = am.activePlaybackConfigurations.joinToString { c ->
+            val device = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) c.audioDeviceInfo?.let { deviceName(it.type) } else null
+            "usage ${c.audioAttributes.usage} -> ${device ?: "?"}"
+        }.ifEmpty { "no player" }
+        val outputs = am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).map { deviceName(it.type) }.distinct().joinToString("/")
+        // A navigation app that speaks over Bluetooth "call audio" (Waze's option) puts the phone in
+        // communication mode, which may take the music off the path the capture listens to.
+        val comm = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) am.communicationDevice?.let { deviceName(it.type) } else null
+        "$players (outputs $outputs, music muted ${am.isStreamMute(android.media.AudioManager.STREAM_MUSIC)}, audio mode ${am.mode}, call device ${comm ?: "none"}, bluetooth sco ${am.isBluetoothScoOn}, music volume ${am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)})"
+    }.getOrDefault("unknown")
+
+    private fun deviceName(type: Int): String = when (type) {
+        android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+        android.media.AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bluetooth-a2dp"
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bluetooth-sco"
+        android.media.AudioDeviceInfo.TYPE_BLE_HEADSET, android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER -> "bluetooth-le"
+        android.media.AudioDeviceInfo.TYPE_REMOTE_SUBMIX -> "remote-submix"
+        android.media.AudioDeviceInfo.TYPE_USB_DEVICE, android.media.AudioDeviceInfo.TYPE_USB_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY -> "usb"
+        android.media.AudioDeviceInfo.TYPE_TELEPHONY -> "telephony"
+        else -> "type$type"
     }
 
     // ------------------------------------------------------------------ music around the connection
@@ -717,6 +776,7 @@ class CarSession(
     /** The car takes the phone's sound now: music held at connect plays on. */
     private fun carAudioReady() {
         carAudioCapturing = true
+        unmuteMusicForCar()
         main.removeCallbacks(holdMusic)
         if (pausedUntilCarAudio) {
             pausedUntilCarAudio = false
@@ -726,9 +786,35 @@ class CarSession(
         }
     }
 
+    /**
+     * The phone's music volume taken down to zero mutes the music stream everywhere, the copy the
+     * car gets included: the 2026-11-11 drive played silence to the car for three connections in a
+     * row (the phone had been muted after a call), while YouTube, at its own volume, still went
+     * through. While the car takes the sound the phone's speaker isn't used, so the music is
+     * unmuted for the car (its volume there is the car's knob); it's muted again when the car goes.
+     */
+    private fun unmuteMusicForCar() {
+        val am = context.getSystemService(android.media.AudioManager::class.java) ?: return
+        if (!am.isStreamMute(android.media.AudioManager.STREAM_MUSIC)) return
+        runCatching { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_UNMUTE, 0) }
+            .onSuccess { musicUnmutedForCar = true; DiagLog.add("car audio: the phone's music was muted, unmuted for the car") }
+            .onFailure { DiagLog.add("car audio: the phone's music is muted and can't be unmuted (${it.message})") }
+    }
+
+    /** Whether [unmuteMusicForCar] unmuted the music, to mute it again when the car goes. */
+    private var musicUnmutedForCar = false
+
+    private fun muteMusicAgain() {
+        if (!musicUnmutedForCar) return
+        musicUnmutedForCar = false
+        val am = context.getSystemService(android.media.AudioManager::class.java) ?: return
+        runCatching { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, 0) }
+    }
+
     /** The car is gone: music stops instead of carrying on from the phone's speaker. */
     private fun pauseMusicOnLeave() {
         main.removeCallbacks(holdMusic)
+        muteMusicAgain()
         if (carAudioCapturing && media.playback.value?.playing == true) {
             media.pause()
             DiagLog.add("car audio: car gone, music paused")
@@ -839,6 +925,7 @@ class CarSession(
         if (settings.accessibilityInCarOnly) net.prototux.aare.mirror.AccessibilitySwitch.carGone(context)
         main.removeCallbacks(focusFallback)
         main.removeCallbacks(videoReport)
+        main.removeCallbacks(silenceWatch)
         net.prototux.aare.notify.CarNotificationListener.sink = null
         audioOuts.values.forEach { it.stop() }; audioOuts.clear()
         phoneBridge?.stop(); phoneBridge = null
@@ -906,6 +993,11 @@ class CarSession(
         private const val FOCUS_ANSWER_MS = 3_000L
         /** How long music is held at connect while the car's sound gets ready. */
         private const val HOLD_MUSIC_MS = 20_000L
+        /** The music watch ([silenceWatch]): how often, how long silent before acting, and how many restarts at most. */
+        private const val SILENCE_CHECK_MS = 2_000L
+        private const val SILENT_MUSIC_MS = 6_000L
+        private const val CAPTURE_RESTART_GAP_MS = 30_000L
+        private const val MAX_CAPTURE_RESTARTS = 3
         /** How long the car gets to answer an audio focus request before the sound plays anyway. */
         private const val AUDIO_FOCUS_ANSWER_MS = 1_000L
         private const val VIDEO_REPORT_MS = 5_000L
