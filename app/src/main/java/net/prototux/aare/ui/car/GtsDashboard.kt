@@ -207,18 +207,22 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
                     Spacer(Modifier.weight(1f))
                     ObdStatusLabel(obdStatus, s, Modifier.padding(bottom = s.dp(8f)))
                 }
-                Spacer(Modifier.height(s.dp(8f)))
-                RevBar(rpm = obd?.rpm?.toInt(), Modifier.fillMaxWidth().height(s.dp(12f)))
-                Row(Modifier.fillMaxWidth().padding(top = s.dp(3f)), horizontalArrangement = Arrangement.SpaceBetween) {
-                    for (i in 0..REV_MAX) Text("$i", fontSize = s.sp(13f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // The rev counter only with the adapter: without one there are no revs to show,
+                // and the weather takes its room instead.
+                if (!byGps) {
+                    Spacer(Modifier.height(s.dp(8f)))
+                    RevBar(rpm = obd?.rpm?.toInt(), Modifier.fillMaxWidth().height(s.dp(12f)))
+                    Row(Modifier.fillMaxWidth().padding(top = s.dp(3f)), horizontalArrangement = Arrangement.SpaceBetween) {
+                        for (i in 0..REV_MAX) Text("$i", fontSize = s.sp(13f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
             Spacer(Modifier.height(s.dp(10f)))
             Column {
                 Text(today(), fontSize = s.sp(22f), color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Spacer(Modifier.height(s.dp(6f)))
-                WeatherRow(state, s)
+                Spacer(Modifier.height(s.dp(if (byGps) 10f else 6f)))
+                WeatherRow(state, s, big = byGps)
             }
             Spacer(Modifier.height(s.dp(12f)))
             // The readings take whatever height is left (it sat empty between them and the weather).
@@ -299,26 +303,30 @@ private fun today(): String {
     return text.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
 }
 
-/** The temperature now and the next three forecasts (filled in by a later stage). */
+/**
+ * The temperature now and the next three forecasts. [big]: in the rev counter's room (no adapter
+ * read), the icons and numbers about half again as large.
+ */
 @Composable
-private fun WeatherRow(state: CarUiState, s: Scale) {
+private fun WeatherRow(state: CarUiState, s: Scale, big: Boolean = false) {
     val w = state.weather
+    val k = if (big) 1.45f else 1f
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (w != null) {
-            Icon(weatherIcon(w), null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(s.dp(30f)))
-            Spacer(Modifier.width(s.dp(6f)))
+            Icon(weatherIcon(w), null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(s.dp(30f * k)))
+            Spacer(Modifier.width(s.dp(6f * k)))
         }
-        Text(if (w != null) "${w.temperature}°" else "--°", fontSize = s.sp(30f), fontWeight = FontWeight.Bold,
+        Text(if (w != null) "${w.temperature}°" else "--°", fontSize = s.sp(30f * k), fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.weight(1f))
         val next = w?.forecast.orEmpty()
         repeat(3) { i ->
             val f = next.getOrNull(i)
             Column(Modifier.padding(start = s.dp(14f)), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(f?.let { "${it.hour}h" } ?: "--h", fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(f?.let { "${it.hour}h" } ?: "--h", fontSize = s.sp(14f * minOf(k, 1.2f)), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (f != null) Icon(weatherIcon(Weather(f.temperature, w!!.unit, f.code, f.day)), null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(16f)))
-                Text(f?.let { "${it.temperature}°" } ?: "--°", fontSize = s.sp(18f), color = MaterialTheme.colorScheme.onSurface)
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(16f * if (big) 1.75f else 1f)))
+                Text(f?.let { "${it.temperature}°" } ?: "--°", fontSize = s.sp(18f * minOf(k, 1.25f)), color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
