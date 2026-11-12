@@ -1,6 +1,9 @@
 package net.prototux.aare.ui.car
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.runtime.key
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
@@ -194,9 +197,10 @@ private fun ContentArea(
     val inputMode = LocalInputModeManager.current.inputMode
     LaunchedEffect(state.screen) { runCatching { focusEntry.requestFocus() } }
     LaunchedEffect(inputMode) { if (!contentFocused) runCatching { focusEntry.requestFocus() } }
+    val motion = LocalCarMotion.current
     AnimatedContent(
         targetState = state.screen,
-        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+        transitionSpec = { carScreenChange(motion) },
         modifier = modifier.fillMaxHeight().onFocusChanged { contentFocused = it.hasFocus }
             .focusRequester(focusEntry).focusGroup(),
         label = "screen",
@@ -309,7 +313,9 @@ private fun RailContent(state: CarUiState, actions: CarActions, horizontal: Bool
         if (recentAt >= chosen.size) recent.take(recentSlots).forEach { r -> RailApp(r, Icons.Rounded.Apps, on(r)) { actions.openApp(r) } }
         // Like Android Auto's: what's playing, with its buttons, right of the apps, on every screen
         // but home (and on home too while a video sits in the media card).
-        if (widget && horizontal) MediaWidget(state, np!!, state.app(np.appId) ?: media, actions)
+        if (widget && horizontal) CarAppear(fadeIn(tween(CarMotion.MEDIUM_MS)) + scaleIn(tween(CarMotion.MEDIUM_MS), initialScale = 0.9f)) {
+            MediaWidget(state, np!!, state.app(np.appId) ?: media, actions)
+        }
     }
     // A phone app (or the mirrored phone screen) has no back of its own on the car: add one by home.
     val current = (state.screen as? CarScreen.App)?.let { state.app(it.appId) }
@@ -422,10 +428,11 @@ internal fun Clock() {
 @Composable
 private fun RailButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
     val d = LocalCarDimens.current
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    val bg = carColor(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+    val fg = carColor(if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+    val press = rememberCarPress()
     Box(
-        Modifier.size(d.railButton).clip(RoundedCornerShape(24.dp)).background(bg).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
+        press.modifier.size(d.railButton).clip(RoundedCornerShape(24.dp)).background(bg).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(press, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = label, tint = fg, modifier = Modifier.size(d.railIcon))
@@ -439,9 +446,10 @@ private fun RailApp(app: CarAppEntry?, fallback: ImageVector, selected: Boolean,
         RailButton(fallback, app?.label ?: "", selected, onClick)
         return
     }
-    val ring = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val ring = carColor(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+    val press = rememberCarPress()
     Box(
-        Modifier.size(d.railButton).clip(RoundedCornerShape(24.dp)).background(ring).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(onClick = onClick),
+        press.modifier.size(d.railButton).clip(RoundedCornerShape(24.dp)).background(ring).carFocusHighlight(RoundedCornerShape(24.dp)).clickable(press, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Image(app.icon.asImageBitmap(), app.label, Modifier.size(d.railButton * 0.63f).clip(CircleShape))
@@ -457,10 +465,11 @@ private fun MediaWidget(state: CarUiState, np: NowPlaying, app: CarAppEntry?, ac
     val d = LocalCarDimens.current
     val shape = RoundedCornerShape(d.railButton / 2)
     val inCard = state.videoInCard?.let(state::app)
+    val press = rememberCarPress(0.97f)
     Row(
-        Modifier.height(d.railButton).widthIn(max = 380.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        press.modifier.height(d.railButton).widthIn(max = 380.dp).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .carFocusHighlight(shape)
-            .clickable {
+            .clickable(press) {
                 if (inCard != null && (app == null || app.packageName == inCard.packageName)) actions.maximizeVideo()
                 else app?.let(actions::openApp)
             }
@@ -469,11 +478,13 @@ private fun MediaWidget(state: CarUiState, np: NowPlaying, app: CarAppEntry?, ac
     ) {
         val art = d.railButton * 0.72f
         val artShape = RoundedCornerShape(10.dp)
-        when {
-            np.art != null -> Image(np.art.asImageBitmap(), null, Modifier.size(art).clip(artShape), contentScale = ContentScale.Crop)
-            app?.icon != null -> Image(app.icon.asImageBitmap(), app.label, Modifier.size(art).clip(CircleShape))
-            else -> Box(Modifier.size(art).clip(artShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(art * 0.55f))
+        CarCrossfade(np, key = { it.title + "\u0000" + it.subtitle + "\u0000" + (it.art != null) }) { n ->
+            when {
+                n.art != null -> Image(n.art.asImageBitmap(), null, Modifier.size(art).clip(artShape), contentScale = ContentScale.Crop)
+                app?.icon != null -> Image(app.icon.asImageBitmap(), app.label, Modifier.size(art).clip(CircleShape))
+                else -> Box(Modifier.size(art).clip(artShape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(art * 0.55f))
+                }
             }
         }
         Spacer(Modifier.width(10.dp))
@@ -499,8 +510,9 @@ private fun MediaWidget(state: CarUiState, np: NowPlaying, app: CarAppEntry?, ac
             ))
         }
         for ((icon, label, run) in buttons) {
-            Box(Modifier.size(button).clip(CircleShape).clickable(onClick = run), contentAlignment = Alignment.Center) {
-                Icon(icon, stringResource(label), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(d.railIcon))
+            val bp = rememberCarPress(0.85f)
+            Box(bp.modifier.size(button).clip(CircleShape).clickable(bp, onClick = run), contentAlignment = Alignment.Center) {
+                CarCrossfade(icon, key = { it }, zoom = true) { Icon(it, stringResource(label), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(d.railIcon)) }
             }
         }
     }
@@ -511,8 +523,9 @@ private fun MicButton(listening: Boolean, onClick: () -> Unit) {
     val d = LocalCarDimens.current
     val bg = if (listening) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
     val fg = if (listening) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+    val press = rememberCarPress()
     Box(
-        Modifier.size(d.railButton).clip(CircleShape).background(bg).carFocusHighlight(CircleShape).clickable(onClick = onClick),
+        press.modifier.size(d.railButton).clip(CircleShape).background(carColor(bg)).carFocusHighlight(CircleShape).clickable(press, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(Icons.Rounded.Mic, contentDescription = stringResource(R.string.assistant_mic_label), tint = fg, modifier = Modifier.size(d.railIcon))
@@ -610,11 +623,13 @@ internal fun Card(
     content: @Composable () -> Unit,
 ) {
     val r = LocalCarDimens.current.cardRadius
+    val press = rememberCarPress(0.98f)
     Box(
         modifier
+            .let { if (onClick != null) it.then(press.modifier) else it }
             .clip(RoundedCornerShape(r))
             .let { if (background != null) it.background(background) else it.background(MaterialTheme.colorScheme.surfaceContainer) }
-            .let { if (onClick != null) it.carFocusHighlight(RoundedCornerShape(r)).clickable(onClick = onClick) else it },
+            .let { if (onClick != null) it.carFocusHighlight(RoundedCornerShape(r)).clickable(press, onClick = onClick) else it },
     ) { content() }
 }
 
@@ -680,9 +695,10 @@ private fun GuidanceCard(g: PhoneGuidance) {
 
 @Composable
 private fun AppChip(app: CarAppEntry, onClick: () -> Unit) {
+    val press = rememberCarPress(0.95f)
     Row(
-        Modifier.height(64.dp).clip(RoundedCornerShape(32.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
-            .carFocusHighlight(RoundedCornerShape(32.dp)).clickable(onClick = onClick).padding(start = 10.dp, end = 20.dp),
+        press.modifier.height(64.dp).clip(RoundedCornerShape(32.dp)).background(MaterialTheme.colorScheme.secondaryContainer)
+            .carFocusHighlight(RoundedCornerShape(32.dp)).clickable(press, onClick = onClick).padding(start = 10.dp, end = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AppIcon(app, 44)
@@ -734,7 +750,9 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
     val videoApp = media != null && state.apps.any { it.video && it.packageName == media.packageName }
     Card(modifier, onClick = { media?.let(actions::openApp) ?: actions.openLauncher() }) {
         if (np?.art != null && !compact) {
-            Image(np.art.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.35f)
+            CarCrossfade(np, key = ::trackKey) { n ->
+                n.art?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.35f) }
+            }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainer))))
         }
         val content: @Composable () -> Unit = {
@@ -769,8 +787,9 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
                 content()
                 Spacer(Modifier.height(12.dp))
                 if (np != null && np.durationMs > 0) {
+                    val progress = smoothProgress((np.positionMs.toFloat() / np.durationMs).coerceIn(0f, 1f), 1_000)
                     LinearProgressIndicator(
-                        progress = { (np.positionMs.toFloat() / np.durationMs).coerceIn(0f, 1f) },
+                        progress = { progress.value },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                     )
                     Spacer(Modifier.height(12.dp))
@@ -784,11 +803,13 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
 @Composable
 private fun Art(np: NowPlaying?, sizeDp: Int) {
     val shape = RoundedCornerShape(16.dp)
-    if (np?.art != null) {
-        Image(np.art.asImageBitmap(), null, Modifier.size(sizeDp.dp).clip(shape), contentScale = ContentScale.Crop)
-    } else {
-        Box(Modifier.size(sizeDp.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size((sizeDp / 2).dp))
+    CarCrossfade(np, key = { it?.let(::trackKey) }) { n ->
+        if (n?.art != null) {
+            Image(n.art.asImageBitmap(), null, Modifier.size(sizeDp.dp).clip(shape), contentScale = ContentScale.Crop)
+        } else {
+            Box(Modifier.size(sizeDp.dp).clip(shape).background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MusicNote, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size((sizeDp / 2).dp))
+            }
         }
     }
 }
@@ -805,8 +826,10 @@ fun RoundIcon(icon: ImageVector, label: String, filled: Boolean, onClick: () -> 
     val d = LocalCarDimens.current
     val bg = if (filled) MaterialTheme.colorScheme.primary else Color.Transparent
     val fg = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Box(Modifier.size(d.touchTarget).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, label, tint = fg, modifier = Modifier.size(d.iconSize))
+    val press = rememberCarPress(0.88f)
+    Box(press.modifier.size(d.touchTarget).clip(CircleShape).background(bg).clickable(press, onClick = onClick), contentAlignment = Alignment.Center) {
+        // Play to pause and back: the new icon zooms in.
+        CarCrossfade(icon, key = { it }, zoom = true) { Icon(it, label, tint = fg, modifier = Modifier.size(d.iconSize)) }
     }
 }
 
@@ -823,8 +846,9 @@ private fun Launcher(state: CarUiState, actions: CarActions, modifier: Modifier)
     ) {
         // Already in the user's order (CarRuntime.applyApps).
         items(state.apps.filter { it.inGrid }, key = { it.id }) { app ->
+            val press = rememberCarPress(0.93f)
             Column(
-                Modifier.clip(RoundedCornerShape(24.dp)).clickable { actions.openApp(app) }.padding(12.dp),
+                press.modifier.clip(RoundedCornerShape(24.dp)).clickable(press) { actions.openApp(app) }.padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 AppIcon(app, 80)
@@ -844,6 +868,8 @@ internal fun NoticeOverlay(state: CarUiState, actions: CarActions, modifier: Mod
         delay(8_000)
         actions.dismissNotice(notice)
     }
+    // Each new notice slides down from the top.
+    key(notice.key) { CarAppear(slideInVertically(tween(CarMotion.LONG_MS, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(CarMotion.MEDIUM_MS)), modifier) {
     Row(
         modifier.padding(16.dp).fillMaxWidth(0.6f).clip(RoundedCornerShape(28.dp))
             .background(MaterialTheme.colorScheme.surfaceContainerHighest).padding(16.dp),
@@ -866,4 +892,8 @@ internal fun NoticeOverlay(state: CarUiState, actions: CarActions, modifier: Mod
         }
         RoundIcon(Icons.Rounded.Close, stringResource(R.string.common_dismiss), filled = false) { actions.dismissNotice(notice) }
     }
+    } }
 }
+
+/** What tells one song from the next, for the art's cross-fade (not every update of the same song). */
+internal fun trackKey(np: NowPlaying): String = np.appId + "\u0000" + np.title + "\u0000" + np.subtitle + "\u0000" + (np.art != null)

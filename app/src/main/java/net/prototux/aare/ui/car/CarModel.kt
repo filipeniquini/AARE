@@ -127,6 +127,8 @@ class CarUiState {
     var carPlayStyle by mutableStateOf(false)
     /** The GTS look: always dark, red accent, Barlow and its own home screen layout (*Settings > Style*). */
     var gtsStyle by mutableStateOf(false)
+    /** How much the car screen animates (Settings.carAnimations). */
+    var motion by mutableStateOf(CarMotion.FULL)
     /** The rail runs along the bottom instead of a side. */
     var railBottom by mutableStateOf(false)
     /** The app on the car screen shows a video full screen (its bars hidden): AARE's bar hides too. */

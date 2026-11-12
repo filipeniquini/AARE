@@ -539,4 +539,9 @@
     <string name="carapp_error_stopped">%1$s parou</string>
     <string name="carapp_error_google_only">%1$s apenas aceita o Android Auto da Google. É necessário permitir a AARE (veja a lista de aplicações no telemóvel).</string>
     <string name="carapp_error_cant_start">%1$s não conseguiu iniciar: %2$s</string>
+    <string name="setup_choice_animations">Animações</string>
+    <string name="setup_animations_full">Completas</string>
+    <string name="setup_animations_reduced">Reduzidas</string>
+    <string name="setup_animations_off">Desligadas</string>
+    <string name="setup_hint_animations">Na tela do carro. Reduzidas deixa só o que ajuda: botões que afundam ao toque e uma troca rápida entre as telas.</string>
 </resources>

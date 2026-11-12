@@ -24,7 +24,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -61,7 +66,12 @@ private val Red = Color(0xFFD32F2F)
 @Composable
 internal fun CallOverlay(state: CarUiState, actions: CarActions, modifier: Modifier) {
     val call = state.call ?: return
-    if (call.ringing) Ringing(call, actions, modifier) else InCall(call, state, actions, modifier)
+    // A ringing call, then the call bar, slide down from the top.
+    key(call.ringing) {
+        CarAppear(slideInVertically(tween(CarMotion.LONG_MS, easing = FastOutSlowInEasing)) { -it } + fadeIn(tween(CarMotion.MEDIUM_MS)), modifier) {
+            if (call.ringing) Ringing(call, actions, modifier) else InCall(call, state, actions, modifier)
+        }
+    }
 }
 
 @Composable

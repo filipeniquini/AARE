@@ -172,7 +172,10 @@ class MainActivity : ComponentActivity() {
         if (intent.hasExtra("bar_recents")) Settings(this).barRecents = intent.getIntExtra("bar_recents", 2)
         // Tests of every style's car screen (auto, gts, carplay).
         intent.getStringExtra("car_style")?.let { Settings(this).carStyle = it }
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style")
+        intent.getStringExtra("car_animations")?.let { Settings(this).carAnimations = it }
+        // Measuring with and without the protocol trace.
+        if (intent.hasExtra("verbose_log")) intent.getBooleanExtra("verbose_log", false).let { Settings(this).verboseProtocolLog = it; SessionAapLog.verbose = it }
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("verbose_log")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
@@ -698,6 +701,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var wallpaper by remember { mutableStateOf(settings.wallpaper) }
     var uiScale by remember { mutableIntStateOf(settings.uiScalePercent) }
     var style by remember { mutableStateOf(settings.carStyle) }
+    var motion by remember { mutableStateOf(settings.carAnimations) }
     val scope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -733,6 +737,12 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
             Choices(stringResource(R.string.setup_choice_style), listOf(Settings.STYLE_AUTO to stringResource(R.string.setup_style_android_auto), Settings.STYLE_GTS to stringResource(R.string.setup_style_gts), Settings.STYLE_CARPLAY to stringResource(R.string.setup_style_carplay)), style) {
                 style = it; settings.carStyle = it
             }
+            Spacer(Modifier.height(12.dp))
+            Choices(stringResource(R.string.setup_choice_animations), net.prototux.aare.ui.car.animationChoices(), motion) {
+                motion = it; settings.carAnimations = it
+            }
+            Text(stringResource(R.string.setup_hint_animations), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
         Section(stringResource(R.string.setup_section_dashboard)) {
             Choices(stringResource(R.string.setup_choice_wallpaper), listOf("none" to stringResource(R.string.setup_wallpaper_none)) + WALLPAPER_NAMES.map { it to it.replaceFirstChar(Char::uppercase) } +

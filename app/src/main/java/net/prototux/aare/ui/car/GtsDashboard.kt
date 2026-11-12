@@ -409,7 +409,10 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
     val media = state.app(np?.appId ?: state.activeMediaAppId)
     Card(modifier, onClick = { media?.let(actions::openApp) ?: actions.openLauncher() }) {
         if (np?.art != null) {
-            Image(np.art.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.45f)
+            // A new song's art fades in over the last one.
+            CarCrossfade(np, key = ::trackKey) { n ->
+                n.art?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.45f) }
+            }
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surfaceContainer))))
         }
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -422,8 +425,9 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
                     // A video app playing as sound only: its picture back, here in the card.
                     if (media != null && state.apps.any { it.video && it.packageName == media.packageName }) {
                         val size = s.dp(34f)
-                        Box(Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                            .clickable { actions.showVideo() }, contentAlignment = Alignment.Center) {
+                        val press = rememberCarPress(0.88f)
+                        Box(press.modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .clickable(press) { actions.showVideo() }, contentAlignment = Alignment.Center) {
                             Icon(Icons.Rounded.OndemandVideo, stringResource(R.string.video_show), tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(size * 0.6f))
                         }
                     }
@@ -443,12 +447,13 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
                         while (true) { now = android.os.SystemClock.elapsedRealtime(); if (!np.playing) break; delay(500) }
                     }
                     val position = (np.positionMs + if (np.playing) (now - np.updatedAtMs).coerceAtLeast(0) else 0).coerceIn(0, np.durationMs)
-                    val p = position.toFloat() / np.durationMs
+                    // Glides between the half-second ticks (full animations): only the bar redraws.
+                    val p = smoothProgress(position.toFloat() / np.durationMs, 500)
                     val track = MaterialTheme.colorScheme.surfaceContainerHighest
                     val fill = MaterialTheme.colorScheme.primary
                     Canvas(Modifier.fillMaxWidth().height(s.dp(4f))) {
                         drawRoundRect(track, cornerRadius = CornerRadius(size.height / 2))
-                        drawRoundRect(fill, size = Size(size.width * p, size.height), cornerRadius = CornerRadius(size.height / 2))
+                        drawRoundRect(fill, size = Size(size.width * p.value, size.height), cornerRadius = CornerRadius(size.height / 2))
                     }
                     Row(Modifier.fillMaxWidth().padding(top = s.dp(2f)), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(clock(position), fontSize = s.sp(11f), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -470,7 +475,9 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
 private fun MediaButton(icon: ImageVector, label: String, filled: Boolean, size: Dp, onClick: () -> Unit) {
     val bg = if (filled) MaterialTheme.colorScheme.primary else Color.Transparent
     val fg = if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Box(Modifier.size(size).clip(CircleShape).background(bg).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, label, tint = fg, modifier = Modifier.size(size * 0.55f))
+    val press = rememberCarPress(0.88f)
+    Box(press.modifier.size(size).clip(CircleShape).background(bg).clickable(press, onClick = onClick), contentAlignment = Alignment.Center) {
+        // Play to pause and back: the new icon zooms in.
+        CarCrossfade(icon, key = { it }, zoom = true) { Icon(it, label, tint = fg, modifier = Modifier.size(size * 0.55f)) }
     }
 }

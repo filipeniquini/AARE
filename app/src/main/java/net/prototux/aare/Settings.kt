@@ -112,6 +112,11 @@ class Settings(context: Context) {
         get() = prefs.getString("car_style", STYLE_AUTO) ?: STYLE_AUTO
         set(v) = prefs.edit { putString("car_style", v) }
 
+    /** How much the car screen animates: [MOTION_FULL], [MOTION_REDUCED] or [MOTION_OFF]. */
+    var carAnimations: String
+        get() = prefs.getString("car_animations", MOTION_FULL) ?: MOTION_FULL
+        set(v) = prefs.edit { putString("car_animations", v) }
+
     /**
      * Passenger mode: ignore the car's "driving" signal, so a passenger can type a destination or
      * browse long lists while moving. The driver must not use the screen then.
@@ -415,6 +420,9 @@ class Settings(context: Context) {
         const val STYLE_AUTO = "auto"
         const val STYLE_CARPLAY = "carplay"
         const val STYLE_GTS = "gts"
+        const val MOTION_FULL = "full"
+        const val MOTION_REDUCED = "reduced"
+        const val MOTION_OFF = "off"
         const val KEY_UI_SCALE = "ui_scale_percent"
         /** The sizes offered for the car screen's interface, largest first. */
         val UI_SCALES = listOf(100, 90, 80, 70)

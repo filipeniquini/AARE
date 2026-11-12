@@ -119,16 +119,18 @@ private fun Dock(state: CarUiState, actions: CarActions, horizontal: Boolean = f
     val media = state.app(state.activeMediaAppId) ?: state.apps.firstOrNull { it.kind == CarAppKind.MEDIA }
     val phone = state.apps.firstOrNull { it.kind == CarAppKind.PHONE }
     val voice: @Composable () -> Unit = {
-        Box(Modifier.size(52.dp).clip(CircleShape).background(if (state.listening) Color(0xFF0A84FF) else Color(0xFF2C2C2E))
-            .clickable { actions.assistant() }, contentAlignment = Alignment.Center) {
+        val press = rememberCarPress()
+        Box(press.modifier.size(52.dp).clip(CircleShape).background(carColor(if (state.listening) Color(0xFF0A84FF) else Color(0xFF2C2C2E)))
+            .clickable(press) { actions.assistant() }, contentAlignment = Alignment.Center) {
             Icon(Icons.Rounded.Mic, "Voice", tint = Color.White)
         }
     }
     // The home button: the app grid, or the dashboard when already on it.
     val homeButton: @Composable () -> Unit = {
         val home = state.screen == CarScreen.Launcher
-        Box(Modifier.size(52.dp).clip(Squircle).background(Color(0xFF2C2C2E))
-            .clickable { if (home) actions.goHome() else actions.openLauncher() }, contentAlignment = Alignment.Center) {
+        val press = rememberCarPress()
+        Box(press.modifier.size(52.dp).clip(Squircle).background(Color(0xFF2C2C2E))
+            .clickable(press) { if (home) actions.goHome() else actions.openLauncher() }, contentAlignment = Alignment.Center) {
             Icon(if (home) Icons.Rounded.SpaceDashboard else Icons.Rounded.Apps, if (home) "Dashboard" else "Home", tint = Color.White)
         }
     }
@@ -189,7 +191,8 @@ private fun Home(state: CarUiState, actions: CarActions) {
                     apps.drop(page * perPage).take(perPage).chunked(columns).forEach { row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             row.forEach { app ->
-                                Column(Modifier.width(130.dp).clickable { actions.openApp(app) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                                val press = rememberCarPress(0.93f)
+                                Column(press.modifier.width(130.dp).clickable(press) { actions.openApp(app) }, horizontalAlignment = Alignment.CenterHorizontally) {
                                     SquircleIcon(app, 88, null)
                                     Spacer(Modifier.height(8.dp))
                                     Text(app.label, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
@@ -214,8 +217,9 @@ private fun Home(state: CarUiState, actions: CarActions) {
 
 @Composable
 private fun SquircleIcon(app: CarAppEntry, sizeDp: Int, onClick: (() -> Unit)?) {
-    val m = Modifier.size(sizeDp.dp).clip(Squircle).background(Color(0xFF2C2C2E))
-    Box(if (onClick != null) m.clickable(onClick = onClick) else m, contentAlignment = Alignment.Center) {
+    val press = rememberCarPress()
+    val m = (if (onClick != null) press.modifier else Modifier).size(sizeDp.dp).clip(Squircle).background(Color(0xFF2C2C2E))
+    Box(if (onClick != null) m.clickable(press, onClick = onClick) else m, contentAlignment = Alignment.Center) {
         val icon = app.icon
         if (icon != null) Image(icon.asImageBitmap(), app.label, Modifier.size((sizeDp * 0.82f).dp).clip(Squircle))
         else Text(app.label.take(1), color = Color.White, fontSize = (sizeDp / 2.5f).sp, fontWeight = FontWeight.SemiBold)

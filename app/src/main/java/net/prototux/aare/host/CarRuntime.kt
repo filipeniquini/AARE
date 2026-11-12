@@ -294,6 +294,7 @@ class CarRuntime(
         ui.carPlayStyle = settings.carStyle == Settings.STYLE_CARPLAY
         ui.gtsStyle = gts
         ui.darkBar = settings.darkBar
+        ui.motion = net.prototux.aare.ui.car.CarMotion.of(settings.carAnimations)
         ui.barApps = settings.barApps
         ui.barRecents = settings.barRecents
         val wallpaper = settings.wallpaper
@@ -317,7 +318,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }
@@ -1026,7 +1027,8 @@ class CarRuntime(
                 { mod -> PhoneAppScreen(this, a.component, PhoneApps.Kind.VIDEO, ui.drivingRestricted, mod, reopen = true, inCard = true) }
             }
             CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else net.prototux.aare.ui.theme.TightCarDimens,
-                net.prototux.aare.ui.car.LocalMapCard provides mapCard, net.prototux.aare.ui.car.LocalVideoCard provides videoCard) {
+                net.prototux.aare.ui.car.LocalMapCard provides mapCard, net.prototux.aare.ui.car.LocalVideoCard provides videoCard,
+                net.prototux.aare.ui.car.LocalCarMotion provides ui.motion) {
                 CarShell(
                     state = ui,
                     actions = actions,

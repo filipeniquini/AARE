@@ -574,4 +574,9 @@
     <string name="carapp_error_stopped">%1$s stopped</string>
     <string name="carapp_error_google_only">%1$s only accepts Google\'s Android Auto. It needs to allow AARE (see the app list on the phone).</string>
     <string name="carapp_error_cant_start">%1$s couldn\'t start: %2$s</string>
+    <string name="setup_choice_animations">Animations</string>
+    <string name="setup_animations_full">Full</string>
+    <string name="setup_animations_reduced">Reduced</string>
+    <string name="setup_animations_off">Off</string>
+    <string name="setup_hint_animations">On the car screen. Reduced keeps only what helps: buttons that sink under the finger and a quick fade between screens.</string>
 </resources>
