@@ -962,15 +962,86 @@ class CarRuntime(
 
     /** The phone app for the GTS big card, if it's set, installed and Shizuku can show it; else null. */
     /**
-     * Gemini mirrored, for an assistant that refuses AARE: on the GTS home screen it opens over the
-     * map in the big card (the same display), and the button again brings the map back; elsewhere
-     * it opens full screen. Gemini starts on its own screen: the driver taps its microphone (it
-     * has no way to be started listening from outside). False when it can't be shown.
+     * The phone's assistant for one that refuses AARE (Gemini). Like Android Auto's: its small
+     * floating window, already listening, over what the car shows: the assist key pressed on the
+     * phone display in view (the map card on the home screen, the phone app full screen), so the
+     * system opens it there itself, even with the phone locked. The button again closes it. If it
+     * doesn't come up, the Gemini app instead (below). False when it can't be shown.
      */
     private fun openGemini(): Boolean {
-        val gemini = context.packageManager.getLaunchIntentForPackage(PhoneApps.GEMINI)?.component ?: return false
         if (!settings.phoneApps || !PhoneApps.available()) return false
+        val onApp = (ui.screen as? CarScreen.App)?.let { ui.app(it.appId) }?.takeIf { it.kind == CarAppKind.PHONE_APP }
         val map = mapCardComponent()
+        val host = when {
+            onApp != null -> PhoneApps.full
+            map != null -> PhoneApps.card
+            else -> null
+        }
+        if (host != null) {
+            // Elsewhere (the app grid, AARE's own screens) nothing of the phone is in view: home first.
+            if (onApp == null && ui.screen != CarScreen.Dashboard && ui.screen != CarScreen.MapFull) actions.goHome()
+            scope.launch {
+                val top = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.topPackage() }
+                if (top == ASSISTANT_HOST) {
+                    DiagLog.add("assistant: floating window closed")
+                    host.back()
+                    return@launch
+                }
+                // Like Android Auto: what plays stops while the assistant listens and answers, and
+                // plays on after. Gemini's window on another display doesn't pause it by itself.
+                val paused = media.playback.value?.takeIf { it.playing }?.packageName
+                if (paused != null) media.pause()
+                host.assist()
+                kotlinx.coroutines.delay(ASSIST_CHECK_MS)
+                val now = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.topPackage() }
+                if (now == ASSISTANT_HOST) {
+                    DiagLog.add("assistant: floating window on the car (${if (onApp != null) "over ${onApp.label}" else "map card"})" +
+                        if (paused != null) ", $paused paused" else "")
+                    if (paused != null) resumeAfterAssistant(host, paused)
+                } else {
+                    DiagLog.add("assistant: no floating window (top is $now), opening Gemini instead")
+                    if (paused != null) media.playPause()
+                    openGeminiApp(map)
+                }
+            }
+            return true
+        }
+        return openGeminiApp(map)
+    }
+
+    /**
+     * Gemini mirrored: on the home screen it opens over the map in the big card (the same display),
+     * and the button again brings the map back; elsewhere it opens full screen. It starts on its own
+     * screen: the driver taps its microphone. False when it can't be shown.
+     */
+    private var assistantWatch: kotlinx.coroutines.Job? = null
+
+    /**
+     * Waits for the assistant's floating window to go (answered, dismissed, the button again), then
+     * plays [pkg] on, unless something plays already (the driver asked for other music) or another
+     * app took over. At most [ASSIST_WATCH_MS]: a window left open doesn't keep the music off for good.
+     */
+    private fun resumeAfterAssistant(host: net.prototux.aare.apps.PhoneAppHost, pkg: String) {
+        assistantWatch?.cancel()
+        assistantWatch = scope.launch {
+            val until = android.os.SystemClock.elapsedRealtime() + ASSIST_WATCH_MS
+            while (android.os.SystemClock.elapsedRealtime() < until) {
+                kotlinx.coroutines.delay(700)
+                val top = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.topPackage() }
+                if (top != ASSISTANT_HOST) break
+            }
+            // A moment for the answer's last words and for a player the assistant started.
+            kotlinx.coroutines.delay(800)
+            val p = media.playback.value
+            if (p?.playing == true) { DiagLog.add("assistant: closed, ${p.packageName} plays already"); return@launch }
+            if (p != null && p.packageName != pkg) { DiagLog.add("assistant: closed, ${p.packageName} is the player now, $pkg left paused"); return@launch }
+            DiagLog.add("assistant: closed, $pkg plays on")
+            media.playPause()
+        }
+    }
+
+    private fun openGeminiApp(map: android.content.ComponentName?): Boolean {
+        val gemini = context.packageManager.getLaunchIntentForPackage(PhoneApps.GEMINI)?.component ?: return false
         if (map != null && (ui.screen == CarScreen.Dashboard || ui.screen == CarScreen.MapFull)) {
             scope.launch {
                 val top = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { PhoneApps.card.topPackage() }
@@ -1072,6 +1143,12 @@ class CarRuntime(
 
     companion object {
         private const val TAG = "AareRuntime"
+        /** The app whose activity is the assistant's floating window (Gemini's runs in the Google app). */
+        private const val ASSISTANT_HOST = "com.google.android.googlequicksearchbox"
+        /** How long the floating window takes to come up before falling back to the Gemini app. */
+        private const val ASSIST_CHECK_MS = 2_500L
+        /** The longest the music waits for the assistant's window to close. */
+        private const val ASSIST_WATCH_MS = 120_000L
         private const val PROBE_DELAY_MS = 8_000L
         private const val CLEANUP_DELAY_MS = 3_000L
         /** After the car session's last unbind, so the apps have finished with it. */

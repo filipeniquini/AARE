@@ -248,6 +248,13 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
 
     fun back() = worker.execute { runCatching { service?.key(slot, android.view.KeyEvent.KEYCODE_BACK) } }
 
+    /**
+     * The assist key, pressed on this display: the phone's assistant opens its small window (Gemini's
+     * floating bar, already listening) here, over what the display shows, as the system's own
+     * assistant gesture would; even with the phone locked and its screen off (2026-11-12).
+     */
+    fun assist() = worker.execute { runCatching { service?.key(slot, android.view.KeyEvent.KEYCODE_ASSIST) } }
+
     /** The package in front on the display, or null (blocking: off the main thread). */
     fun topPackage(): String? = runCatching { service?.topPackage(slot) }.getOrNull()
 
