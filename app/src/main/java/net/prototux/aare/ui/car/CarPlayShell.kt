@@ -80,6 +80,9 @@ internal fun CarPlayShell(
     modifier: Modifier = Modifier,
 ) {
     MaterialTheme(colorScheme = CarPlayColors, typography = MaterialTheme.typography) {
+        // Its screens are black: text without its own color must be light (the settings' titles
+        // were black on black, 2026-11-13).
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides CarPlayColors.onSurface) {
         BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black).then(modifier)) {
             val content: @Composable (Modifier) -> Unit = { modifier ->
                 Box(modifier) {
@@ -109,6 +112,7 @@ internal fun CarPlayShell(
             overlay(Modifier.align(Alignment.BottomCenter))
             NoticeOverlay(state, actions, Modifier.align(Alignment.TopCenter))
             CallOverlay(state, actions, Modifier.align(Alignment.TopCenter))
+        }
         }
     }
 }

@@ -550,6 +550,10 @@
     <string name="setup_animations_reduced">Reduzidas</string>
     <string name="setup_animations_off">Desligadas</string>
     <string name="setup_hint_animations">Na tela do carro. Reduzidas deixa só o que ajuda: botões que afundam ao toque e uma troca rápida entre as telas.</string>
+    <string name="setup_choice_card_scale">Mapa e cartões</string>
+    <string name="setup_cards_map">Mapa maior</string>
+    <string name="setup_cards_balanced">Equilibrado</string>
+    <string name="setup_cards_big">Cartões maiores</string>
     <string name="setup_toggle_theme_follows_title">Tema do celular segue o carro</string>
     <string name="setup_toggle_theme_follows_subtitle">Conectado, o celular fica claro de dia e escuro à noite junto com a tela do carro, e o Waze e o Google Maps acompanham. Volta ao seu tema quando o carro desconecta.</string>
     <string name="setup_choice_corner_card">Cartão ao lado do mapa</string>

@@ -98,7 +98,7 @@ internal fun GtsDashboard(
             mapCard(Modifier.fillMaxSize())
         }
         else NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
-        BoxWithConstraints(Modifier.weight(GTS_SIDE_WEIGHT).fillMaxHeight()) {
+        BoxWithConstraints(Modifier.weight(sideWeight(state.cardScale)).fillMaxHeight()) {
         val boxW = maxWidth
         val boxH = maxHeight
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -158,8 +158,15 @@ val LocalMapCard = androidx.compose.runtime.compositionLocalOf<(@Composable (Mod
 /** The video minimized into the media card ([CarUiState.videoInCard]), provided by the car runtime. */
 val LocalVideoCard = androidx.compose.runtime.compositionLocalOf<(@Composable (Modifier) -> Unit)?> { null }
 
-/** The right column's width against the map card's 1: about 30 % of the screen, as in the user's sketch. */
-private const val GTS_SIDE_WEIGHT = 0.42f
+/**
+ * The cards' column width against the map card's 1, by the user's choice ([net.prototux.aare.Settings.cardScale]),
+ * in every style: balanced is the GTS split (about 30 % of the screen, as in the user's sketch).
+ */
+internal fun sideWeight(scale: String): Float = when (scale) {
+    net.prototux.aare.Settings.CARDS_MAP -> 0.32f
+    net.prototux.aare.Settings.CARDS_BIG -> 0.6f
+    else -> 0.42f
+}
 
 /** The car card's grey, like the VW Play's own screens. */
 private val CAR_CARD = Color(0xFF3F4247)

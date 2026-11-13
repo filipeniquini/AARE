@@ -42,6 +42,7 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
     var style by remember { mutableStateOf(settings.carStyle) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
     var corner by remember { mutableStateOf(settings.cornerCard) }
+    var cards by remember { mutableStateOf(settings.cardScale) }
     var banners by remember { mutableStateOf(settings.messageBanners) }
     var aloud by remember { mutableStateOf(settings.readMessagesAloud) }
     var audio by remember { mutableStateOf(settings.carAudio) }
@@ -72,6 +73,11 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
         item {
             Choice(stringResource(R.string.setup_choice_animations), animationChoices(), motion) {
                 motion = it; settings.carAnimations = it
+            }
+        }
+        item {
+            Choice(stringResource(R.string.setup_choice_card_scale), cardScaleChoices(), cards) {
+                cards = it; settings.cardScale = it
             }
         }
         item {
@@ -111,6 +117,14 @@ private fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Un
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
+
+/** The map and cards splits, for the phone's and the car's settings. */
+@Composable
+internal fun cardScaleChoices(): List<Pair<String, String>> = listOf(
+    Settings.CARDS_MAP to stringResource(R.string.setup_cards_map),
+    Settings.CARDS_BALANCED to stringResource(R.string.setup_cards_balanced),
+    Settings.CARDS_BIG to stringResource(R.string.setup_cards_big),
+)
 
 /** The cards the corner over the player can show, for the phone's and the car's settings. */
 @Composable

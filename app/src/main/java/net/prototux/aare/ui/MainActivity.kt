@@ -176,11 +176,15 @@ class MainActivity : ComponentActivity() {
         // Comparing map apps in the map card (frame rate tests).
         intent.getStringExtra("map_card_app")?.let { Settings(this).mapCardApp = it }
         intent.getStringExtra("corner_card")?.let { Settings(this).cornerCard = it }
+        intent.getStringExtra("card_scale")?.let { Settings(this).cardScale = it }
+        intent.getStringExtra("start_screen")?.let { Settings(this).debugStartScreen = it }
+        if (intent.hasExtra("hide_map")) Settings(this).debugHideMap = intent.getBooleanExtra("hide_map", false)
+        if (intent.hasExtra("ui_scale")) Settings(this).uiScalePercent = intent.getIntExtra("ui_scale", 100)
         if (intent.hasExtra("theme_follows")) Settings(this).themeFollowsCar = intent.getBooleanExtra("theme_follows", false)
         if (intent.hasExtra("aod_off")) Settings(this).aodOffInCar = intent.getBooleanExtra("aod_off", false)
         // Measuring with and without the protocol trace.
         if (intent.hasExtra("verbose_log")) intent.getBooleanExtra("verbose_log", false).let { Settings(this).verboseProtocolLog = it; SessionAapLog.verbose = it }
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("theme_follows") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log")
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("theme_follows") || intent.hasExtra("card_scale") || intent.hasExtra("start_screen") || intent.hasExtra("hide_map") || intent.hasExtra("ui_scale") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
@@ -708,6 +712,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var style by remember { mutableStateOf(settings.carStyle) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
     var corner by remember { mutableStateOf(settings.cornerCard) }
+    var cards by remember { mutableStateOf(settings.cardScale) }
     var themeFollows by remember { mutableStateOf(settings.themeFollowsCar) }
     val scope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -756,6 +761,10 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
             }
         }
         Section(stringResource(R.string.setup_section_dashboard)) {
+            Choices(stringResource(R.string.setup_choice_card_scale), net.prototux.aare.ui.car.cardScaleChoices(), cards) {
+                cards = it; settings.cardScale = it
+            }
+            Spacer(Modifier.height(12.dp))
             RadioChoices(stringResource(R.string.setup_choice_corner_card), net.prototux.aare.ui.car.cornerCardChoices(), corner) {
                 corner = it; settings.cornerCard = it
             }

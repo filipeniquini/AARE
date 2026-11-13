@@ -573,9 +573,10 @@ internal fun Dashboard(
         } else if (maxWidth > maxHeight * 2.1f) {
             // very wide screens (1920x720, 2560x720…): three cards side by side, like Android Auto's
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gutter)) {
-                NavCard(state, actions, navMap, Modifier.weight(1.6f).fillMaxHeight())
-                // The car card over the 16:9 player.
-                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
+                // The car card over the 16:9 player (the split as the user chose, 2026-11-13).
+                val side = sideWeight(state.cardScale)
+                BoxWithConstraints(Modifier.weight(side * 1.5f).fillMaxHeight()) {
                     val boxW = maxWidth
                     val boxH = maxHeight
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -584,7 +585,7 @@ internal fun Dashboard(
                     }
                 }
                 // The next event or the latest notification.
-                Column(Modifier.weight(0.9f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gutter)) {
+                Column(Modifier.weight(side * 1.35f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gutter)) {
                     val event = state.nextEvent
                     val latest = state.history.firstOrNull()
                     when {
@@ -597,10 +598,11 @@ internal fun Dashboard(
             }
         } else {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(gutter)) {
-                NavCard(state, actions, navMap, Modifier.weight(1.65f).fillMaxHeight())
+                NavCard(state, actions, navMap, Modifier.weight(1f).fillMaxHeight())
                 val event = state.nextEvent
-                // The car card over the 16:9 player (every style since 2026-11-12), the next event under it.
-                BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                // The car card over the 16:9 player (every style since 2026-11-12), the next event
+                // under it; the split as the user chose, the same as the GTS style's (2026-11-13).
+                BoxWithConstraints(Modifier.weight(sideWeight(state.cardScale)).fillMaxHeight()) {
                     val boxW = maxWidth
                     val boxH = maxHeight
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -765,8 +767,10 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
                 Text(np.subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             } else {
-                Text(media?.label ?: stringResource(R.string.media_fallback_label), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.media_nothing_playing), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(media?.label ?: stringResource(R.string.media_fallback_label), style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stringResource(R.string.media_nothing_playing), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
         if (compact) {
@@ -776,33 +780,77 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
                 Column(Modifier.weight(1f)) { content() }
                 MediaButtons(np, actions)
             }
-        } else {
-            Column(Modifier.fillMaxSize().padding(24.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Art(np, 72)
-                    Spacer(Modifier.width(16.dp))
-                    if (media != null) AppIcon(media, 28)
-                    if (videoApp) {
-                        Spacer(Modifier.weight(1f))
-                        RoundIcon(Icons.Rounded.OndemandVideo, stringResource(R.string.video_show), filled = false) { actions.showVideo() }
-                    }
+        } else BoxWithConstraints(Modifier.fillMaxSize()) {
+            // The player is always 16:9, so a bigger interface (or a small screen) leaves it short:
+            // its buttons fell out of the card at 90-100 % in the Android Auto and CarPlay styles
+            // (2026-11-13). When short, the art goes beside the title, the gaps shrink, and the
+            // progress bar goes before the buttons do.
+            val roomy = maxHeight >= MEDIA_ROOMY
+            val withProgress = maxHeight >= MEDIA_WITH_PROGRESS
+            val pad = if (roomy) 24.dp else 12.dp
+            val d = LocalCarDimens.current
+            // Very short (the CarPlay style at 100 % on a small screen): one line, the title and the
+            // buttons, the buttons as big as the card allows.
+            if (maxHeight < MEDIA_ONE_LINE) {
+                // At most 60 % of the width for the three buttons: the title keeps the rest.
+                val target = minOf(d.touchTarget, maxHeight - 16.dp, maxWidth * 0.2f).coerceAtLeast(32.dp)
+                Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { content() }
+                    androidx.compose.runtime.CompositionLocalProvider(LocalCarDimens provides d.copy(touchTarget = target, iconSize = target * 0.47f)) { MediaButtons(np, actions) }
                 }
-                Spacer(Modifier.weight(1f))
-                content()
-                Spacer(Modifier.height(12.dp))
-                if (np != null && np.durationMs > 0) {
+                return@BoxWithConstraints
+            }
+            // The buttons fit what's left under the art row (they kept 76 dp and fell out).
+            val buttons = if (roomy) d.touchTarget
+                else minOf(d.touchTarget, maxHeight - pad * 2 - MEDIA_ART_SHORT.dp - 8.dp).coerceAtLeast(36.dp)
+            androidx.compose.runtime.CompositionLocalProvider(LocalCarDimens provides d.copy(touchTarget = buttons, iconSize = minOf(d.iconSize, buttons * 0.47f))) {
+            Column(Modifier.fillMaxSize().padding(horizontal = if (roomy) 24.dp else 16.dp, vertical = pad)) {
+                if (roomy) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Art(np, 72)
+                        Spacer(Modifier.width(16.dp))
+                        if (media != null) AppIcon(media, 28)
+                        if (videoApp) {
+                            Spacer(Modifier.weight(1f))
+                            RoundIcon(Icons.Rounded.OndemandVideo, stringResource(R.string.video_show), filled = false) { actions.showVideo() }
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    content()
+                    Spacer(Modifier.height(12.dp))
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Art(np, MEDIA_ART_SHORT)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) { content() }
+                        if (videoApp) RoundIcon(Icons.Rounded.OndemandVideo, stringResource(R.string.video_show), filled = false) { actions.showVideo() }
+                        else if (media != null) AppIcon(media, 24)
+                    }
+                    Spacer(Modifier.weight(1f))
+                }
+                if (np != null && np.durationMs > 0 && withProgress) {
                     val progress = (np.positionMs.toFloat() / np.durationMs).coerceIn(0f, 1f)
                     LinearProgressIndicator(
                         progress = { progress },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(if (roomy) 12.dp else 6.dp))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) { MediaButtons(np, actions) }
+            }
             }
         }
     }
 }
+
+/**
+ * The player card's heights: room for the art over the title, for the progress bar, below which
+ * it's one line; the art when short.
+ */
+private val MEDIA_ONE_LINE = 130.dp
+private val MEDIA_ROOMY = 270.dp
+private val MEDIA_WITH_PROGRESS = 190.dp
+private const val MEDIA_ART_SHORT = 48
 
 @Composable
 private fun Art(np: NowPlaying?, sizeDp: Int) {

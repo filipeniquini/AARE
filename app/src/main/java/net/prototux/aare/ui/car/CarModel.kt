@@ -115,6 +115,8 @@ class CarUiState {
     var holiday by mutableStateOf<net.prototux.aare.car.Holiday?>(null)
     /** What the card over the player shows: [net.prototux.aare.Settings.CORNER_CAR] or [net.prototux.aare.Settings.CORNER_CLOCK]. */
     var cornerCard by mutableStateOf(net.prototux.aare.Settings.CORNER_CAR)
+    /** The map and cards split on the home screen ([net.prototux.aare.Settings.cardScale]). */
+    var cardScale by mutableStateOf(net.prototux.aare.Settings.CARDS_BALANCED)
     /** The phone call ringing or on, if any. */
     var call by mutableStateOf<CarCall?>(null)
     /** The apps opened last, newest first (ids): the rail shows the recent ones. */

@@ -1,5 +1,6 @@
 package net.prototux.aare.host
 
+import androidx.compose.foundation.background
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -311,6 +312,7 @@ class CarRuntime(
         ui.darkBar = settings.darkBar
         ui.motion = net.prototux.aare.ui.car.CarMotion.of(settings.carAnimations)
         ui.cornerCard = settings.cornerCard
+        ui.cardScale = settings.cardScale
         ui.barApps = settings.barApps
         ui.barRecents = settings.barRecents
         val wallpaper = settings.wallpaper
@@ -334,7 +336,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car", "card_scale" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }
@@ -362,6 +364,16 @@ class CarRuntime(
         scope.launch { NativeCompat.changes.collectLatest { refreshApps() } }
         if (primary) scope.launch { probeNativeApps() }
         if (primary) main.postDelayed(cleanUp, CLEANUP_DELAY_MS)
+        // Tests (debug builds): open a screen at once, to check its layout on many screens.
+        if (net.prototux.aare.BuildConfig.DEBUG) settings.debugStartScreen.takeIf { it.isNotBlank() }?.let { screen ->
+            main.postDelayed({
+                when (screen) {
+                    "launcher" -> actions.openLauncher()
+                    "map" -> actions.openMapFull()
+                    else -> ui.apps.firstOrNull { it.kind.name.equals(screen, ignoreCase = true) }?.let(actions::openApp)
+                }
+            }, 3_000)
+        }
         scope.launch { watchCalls() }
         scope.launch { watchDashboardInfo() }
         scope.launch {
@@ -1116,7 +1128,10 @@ class CarRuntime(
         CarTheme(night = ui.night, gts = ui.gtsStyle) {
             // The home screen's big card: a phone app live (Google Maps by default), when it can.
             val cardApp = remember(ui.gtsStyle) { mapCardComponent() }
-            val mapCard: (@Composable (Modifier) -> Unit)? = cardApp?.let { component ->
+            // Tests (debug builds): a grey box instead of the map, so screen captures show no place.
+            val hideMap = net.prototux.aare.BuildConfig.DEBUG && settings.debugHideMap
+            val mapCard: (@Composable (Modifier) -> Unit)? = if (hideMap) { mod -> androidx.compose.foundation.layout.Box(mod.background(androidx.compose.ui.graphics.Color(0xFF555555))) }
+            else cardApp?.let { component ->
                 { mod -> PhoneAppScreen(this, component, PhoneApps.Kind.NAVIGATION, ui.drivingRestricted, mod, host = PhoneApps.card, reopen = false) }
             }
             // A video minimized into the media card: the full-screen display, shown small there.

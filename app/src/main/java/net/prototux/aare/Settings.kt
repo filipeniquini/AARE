@@ -120,6 +120,24 @@ class Settings(context: Context) {
         get() = prefs.getString("corner_card", CORNER_CAR) ?: CORNER_CAR
         set(v) = prefs.edit { putString("corner_card", v) }
 
+    /**
+     * The home screen's split between the map and the cards beside it, the same in every style
+     * (2026-11-13: the styles had each their own): [CARDS_MAP], [CARDS_BALANCED] or [CARDS_BIG].
+     */
+    var cardScale: String
+        get() = prefs.getString("card_scale", CARDS_BALANCED) ?: CARDS_BALANCED
+        set(v) = prefs.edit { putString("card_scale", v) }
+
+    /** Tests only (debug builds): a screen opened when the car connects ("launcher", "settings", "phone"...). */
+    var debugStartScreen: String
+        get() = prefs.getString("debug_start_screen", "") ?: ""
+        set(v) = prefs.edit { putString("debug_start_screen", v) }
+
+    /** Tests only (debug builds): the map card drawn as a plain grey box, so captures show no place. */
+    var debugHideMap: Boolean
+        get() = prefs.getBoolean("debug_hide_map", false)
+        set(v) = prefs.edit { putBoolean("debug_hide_map", v) }
+
     /** How much the car screen animates: [MOTION_FULL], [MOTION_REDUCED] or [MOTION_OFF]. */
     var carAnimations: String
         get() = prefs.getString("car_animations", MOTION_FULL) ?: MOTION_FULL
@@ -455,6 +473,9 @@ class Settings(context: Context) {
         const val STYLE_CARPLAY = "carplay"
         const val STYLE_GTS = "gts"
         const val MOTION_FULL = "full"
+        const val CARDS_MAP = "map"
+        const val CARDS_BALANCED = "balanced"
+        const val CARDS_BIG = "cards"
         const val CORNER_CAR = "car"
         const val CORNER_CLOCK = "clock"
         const val CORNER_TURN = "turn"
