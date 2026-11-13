@@ -706,6 +706,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var uiScale by remember { mutableIntStateOf(settings.uiScalePercent) }
     var style by remember { mutableStateOf(settings.carStyle) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
+    var corner by remember { mutableStateOf(settings.cornerCard) }
     val scope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -749,6 +750,11 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
         Section(stringResource(R.string.setup_section_dashboard)) {
+            Choices(stringResource(R.string.setup_choice_corner_card), net.prototux.aare.ui.car.cornerCardChoices(), corner) {
+                corner = it; settings.cornerCard = it
+            }
+            Text(stringResource(R.string.setup_hint_corner_card), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
             Choices(stringResource(R.string.setup_choice_wallpaper), listOf("none" to stringResource(R.string.setup_wallpaper_none)) + WALLPAPER_NAMES.map { it to it.replaceFirstChar(Char::uppercase) } +
                 listOf(Settings.WALLPAPER_CUSTOM to stringResource(R.string.setup_wallpaper_photo)), wallpaper) { choice ->
                 if (choice == Settings.WALLPAPER_CUSTOM) photoPicker.launch("image/*")

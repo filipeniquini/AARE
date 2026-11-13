@@ -41,6 +41,7 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
     var rail by remember { mutableStateOf(settings.railPosition) }
     var style by remember { mutableStateOf(settings.carStyle) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
+    var corner by remember { mutableStateOf(settings.cornerCard) }
     var banners by remember { mutableStateOf(settings.messageBanners) }
     var aloud by remember { mutableStateOf(settings.readMessagesAloud) }
     var audio by remember { mutableStateOf(settings.carAudio) }
@@ -71,6 +72,11 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
         item {
             Choice(stringResource(R.string.setup_choice_animations), animationChoices(), motion) {
                 motion = it; settings.carAnimations = it
+            }
+        }
+        item {
+            Choice(stringResource(R.string.setup_choice_corner_card), cornerCardChoices(), corner) {
+                corner = it; settings.cornerCard = it
             }
         }
         item {
@@ -105,6 +111,13 @@ private fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Un
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
+
+/** The cards the corner over the player can show, for the phone's and the car's settings. */
+@Composable
+internal fun cornerCardChoices(): List<Pair<String, String>> = listOf(
+    Settings.CORNER_CAR to stringResource(R.string.setup_corner_car),
+    Settings.CORNER_CLOCK to stringResource(R.string.setup_corner_clock),
+)
 
 /** The animation levels, for the phone's and the car's settings. */
 @Composable

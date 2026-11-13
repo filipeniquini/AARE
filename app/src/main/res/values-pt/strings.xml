@@ -548,4 +548,8 @@
     <string name="setup_animations_reduced">Reduzidas</string>
     <string name="setup_animations_off">Desligadas</string>
     <string name="setup_hint_animations">Na tela do carro. Reduzidas deixa só o que ajuda: botões que afundam ao toque e uma troca rápida entre as telas.</string>
+    <string name="setup_choice_corner_card">Cartão ao lado do mapa</string>
+    <string name="setup_corner_car">Carro</string>
+    <string name="setup_corner_clock">Relógio, clima e agenda</string>
+    <string name="setup_hint_corner_card">Acima do player. Carro: velocidade, as leituras do adaptador OBD2 ou a viagem pelo GPS. Relógio: a hora, o clima completo, o próximo compromisso e feriado.</string>
 </resources>
