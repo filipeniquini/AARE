@@ -686,7 +686,7 @@ private fun GuidanceCard(g: PhoneGuidance) {
         }
         if (g.detail.isNotEmpty()) {
             Spacer(Modifier.height(20.dp))
-            Text(g.detail, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            AccentText(g.detail, MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(16.dp))
         Text(stringResource(R.string.nav_guidance_on_phone, g.appLabel), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -887,7 +887,7 @@ internal fun NoticeOverlay(state: CarUiState, actions: CarActions, modifier: Mod
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         notice.actions.forEach { (label, run) ->
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+            AccentText(label, MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { run(); actions.dismissNotice(notice) }.padding(16.dp))
         }
         RoundIcon(Icons.Rounded.Close, stringResource(R.string.common_dismiss), filled = false) { actions.dismissNotice(notice) }

@@ -17,12 +17,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BluetoothDisabled
 import androidx.compose.material.icons.rounded.BluetoothSearching
+import androidx.compose.material.icons.rounded.Celebration
+import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
 import androidx.compose.material.icons.rounded.OndemandVideo
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Terrain
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
@@ -112,7 +116,7 @@ internal fun GtsDashboard(
 @Composable
 internal fun CarInfoCard(state: CarUiState, modifier: Modifier) {
     if (!net.prototux.aare.ui.theme.LocalGtsStyle.current) {
-        Card(modifier) { GtsCarCard(state, Modifier.fillMaxSize()) }
+        Card(modifier) { CornerCard(state, Modifier.fillMaxSize()) }
         return
     }
     // Grey, like the car's own VW Play screens, with its insides in matching greys.
@@ -126,7 +130,7 @@ internal fun CarInfoCard(state: CarUiState, modifier: Modifier) {
             surfaceContainerHighest = if (night) Color(0xFF26272B) else Color(0x40000000),
             onSurface = if (night) Color(0xFFE6E7EA) else Color.White,
             onSurfaceVariant = if (night) Color(0xFF9A9FA8) else Color(0xFFC9CCD1),
-        )) { GtsCarCard(state, Modifier.fillMaxSize()) }
+        )) { CornerCard(state, Modifier.fillMaxSize()) }
     }
 }
 
@@ -233,6 +237,174 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
     }
 }
 
+/** The card the user picked for this corner: the car's, or the clock with the weather and the agenda. */
+@Composable
+private fun CornerCard(state: CarUiState, modifier: Modifier) {
+    if (state.cornerCard == net.prototux.aare.Settings.CORNER_CLOCK) GtsClockCard(state, modifier) else GtsCarCard(state, modifier)
+}
+
+/**
+ * The clock card (2026-11-13, in place of the car's when the user picks it): the time big, the
+ * date, the weather in full (now, the day's low and high and chance of rain, the next hours) and
+ * the next events of the agenda. Nothing moves: it changes once a minute, with the clock.
+ */
+@Composable
+private fun GtsClockCard(state: CarUiState, modifier: Modifier) {
+    val context = LocalContext.current
+    val now = minuteClock()
+    val w = state.weather
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides
+        androidx.compose.material3.LocalTextStyle.current.copy(lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified)) {
+    BoxWithConstraints(modifier) {
+        val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
+        Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f))) {
+            // The time and the date, the weather now beside them.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(DateFormat.getTimeFormat(context).format(java.util.Date(now)), fontSize = s.sp(60f), lineHeight = s.sp(60f),
+                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    Text(today(), fontSize = s.sp(18f), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (w != null) {
+                            Icon(weatherIcon(w), null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(s.dp(40f)))
+                            Spacer(Modifier.width(s.dp(6f)))
+                        }
+                        Text(if (w != null) "${w.temperature}°" else "--°", fontSize = s.sp(38f), fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (w?.high != null && w.low != null) {
+                            Text("\u2191${w.high}\u00b0 \u2193${w.low}\u00b0", fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (w?.rain != null) {
+                            Spacer(Modifier.width(s.dp(8f)))
+                            Icon(Icons.Rounded.WaterDrop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(14f)))
+                            Text("${w.rain}%", fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(s.dp(10f)))
+            // The agenda: the next event (and how many more), even weeks away, then the next holiday.
+            val events = state.events
+            val first = events.firstOrNull()
+            val holiday = state.holiday?.takeIf { h -> events.none { it.allDay && it.title.equals(h.name, ignoreCase = true) } }
+            if (first == null) {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(s.dp(12f))).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = s.dp(12f), vertical = s.dp(10f)), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.EventAvailable, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(18f)))
+                    Spacer(Modifier.width(s.dp(8f)))
+                    Text(stringResource(R.string.gts_agenda_empty), fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            } else AgendaRow(first, events.size - 1, s, Modifier.fillMaxWidth())
+            if (holiday != null) {
+                Spacer(Modifier.height(s.dp(6f)))
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(s.dp(12f))).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = s.dp(12f), vertical = s.dp(7f)), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Celebration, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(18f)))
+                    Spacer(Modifier.width(s.dp(8f)))
+                    Text(holiday.name, fontSize = s.sp(14f), color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(s.dp(8f)))
+                    Text(dayLabel(holiday.date), fontSize = s.sp(14f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(s.dp(10f)))
+            // The next hours, every two: the rest of the card, the weather being what matters most here.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(s.dp(12f)))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                // Grows with the room it has, within what each slot's width allows.
+                val k = minOf(maxHeight.value / (110f * s.u), maxWidth.value / (CLOCK_HOURS * 56f * s.u)).coerceIn(0.8f, 1.8f)
+                val hours = w?.hours.orEmpty()
+                Row(Modifier.fillMaxSize().padding(vertical = s.dp(8f * k))) {
+                    for (i in 0 until CLOCK_HOURS) {
+                        val f = hours.getOrNull(i * 2 + 1)
+                        Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.SpaceEvenly) {
+                            Text(f?.let { "${it.hour}h" } ?: "--h", fontSize = s.sp(14f * k), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (f != null) Icon(weatherIcon(Weather(f.temperature, w!!.unit, f.code, f.day)), null,
+                                tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(s.dp(38f * k)))
+                            else Spacer(Modifier.height(s.dp(38f * k)))
+                            Text(f?.let { "${it.temperature}\u00b0" } ?: "--\u00b0", fontSize = s.sp(24f * k), fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (f?.rain != null) {
+                                    Icon(Icons.Rounded.WaterDrop, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(11f * k)))
+                                    Text("${f.rain}%", fontSize = s.sp(12f * k), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else Text("", fontSize = s.sp(12f * k))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+/**
+ * The next event: its time (or "today" for a whole day) on the left, the title and place beside it,
+ * and "+[more]" when other events follow in the next hours.
+ */
+@Composable
+private fun AgendaRow(e: net.prototux.aare.car.NextEvent, more: Int, s: Scale, modifier: Modifier) {
+    val context = LocalContext.current
+    // Pure black behind the red day and time: the car's video keeps red letters sharp only there.
+    Row(modifier.clip(RoundedCornerShape(s.dp(12f))).background(Color.Black)
+        .padding(horizontal = s.dp(12f), vertical = s.dp(6f)), verticalAlignment = Alignment.CenterVertically) {
+        // All-day events start at midnight UTC: their day is the UTC one.
+        val day = if (e.allDay) java.time.Instant.ofEpochMilli(e.startMs).atZone(java.time.ZoneOffset.UTC).toLocalDate()
+            else java.time.Instant.ofEpochMilli(e.startMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        val time = if (e.allDay) null else DateFormat.getTimeFormat(context).format(java.util.Date(e.startMs))
+        Column(Modifier.widthIn(min = s.dp(64f)).padding(end = s.dp(10f))) {
+            AccentText(dayLabel(day), MaterialTheme.colorScheme.primary, fontSize = s.sp(if (time == null) 16f else 12f),
+                fontWeight = if (time == null) FontWeight.Bold else FontWeight.Normal, maxLines = 1, backdrop = false)
+            if (time != null) AccentText(time, MaterialTheme.colorScheme.primary, fontSize = s.sp(16f), fontWeight = FontWeight.Bold, maxLines = 1, backdrop = false)
+        }
+        Column(Modifier.weight(1f)) {
+            Text(e.title, fontSize = s.sp(16f), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (e.location.isNotBlank()) Text(e.location, fontSize = s.sp(12f), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (more > 0) Text("+$more", fontSize = s.sp(14f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = s.dp(8f)))
+    }
+}
+
+/** "Hoje", "Amanhã", or the day ("sex., 20 de nov.") in the phone's language. */
+@Composable
+private fun dayLabel(day: java.time.LocalDate): String {
+    val today = java.time.LocalDate.now()
+    return when (day) {
+        today -> stringResource(R.string.dash_event_today)
+        today.plusDays(1) -> stringResource(R.string.gts_tomorrow)
+        else -> {
+            val locale = LocalContext.current.resources.configuration.locales[0] ?: Locale.getDefault()
+            java.time.format.DateTimeFormatter.ofPattern(DateFormat.getBestDateTimePattern(locale, "EEEdMMM"), locale).format(day)
+        }
+    }
+}
+
+/** The time now, changing on the minute (one redraw a minute: nothing else moves on the card). */
+@Composable
+private fun minuteClock(): Long {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000 - System.currentTimeMillis() % 60_000 + 50)
+            now = System.currentTimeMillis()
+        }
+    }
+    return now
+}
+
+/** The clock card's forecast slots (every two hours). */
+private const val CLOCK_HOURS = 5
+
 /** Where the adapter stands, small and only when it isn't simply reading: the adapter's name with a dot, or why not. */
 @Composable
 private fun ObdStatusLabel(status: ObdReader.Status, s: Scale, modifier: Modifier) {
@@ -313,7 +485,7 @@ private fun WeatherRow(state: CarUiState, s: Scale, big: Boolean = false) {
     val k = if (big) 1.45f else 1f
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (w != null) {
-            Icon(weatherIcon(w), null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(s.dp(30f * k)))
+            Icon(weatherIcon(w), null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(s.dp(38f * k)))
             Spacer(Modifier.width(s.dp(6f * k)))
         }
         Text(if (w != null) "${w.temperature}°" else "--°", fontSize = s.sp(30f * k), fontWeight = FontWeight.Bold,

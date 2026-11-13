@@ -355,6 +355,8 @@
     <string name="gts_trip_top">Velocidade máxima</string>
     <string name="gts_trip_altitude">Altitude</string>
     <string name="gts_trip_heading">Rumo</string>
+    <string name="gts_agenda_empty">Nada na agenda nos próximos 60 dias</string>
+    <string name="gts_tomorrow">Amanhã</string>
     <string-array name="gts_compass_points">
         <item>N</item>
         <item>NE</item>

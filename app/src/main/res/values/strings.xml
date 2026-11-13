@@ -497,6 +497,8 @@
     <string name="gts_trip_top">Top speed</string>
     <string name="gts_trip_altitude">Altitude</string>
     <string name="gts_trip_heading">Heading</string>
+    <string name="gts_agenda_empty">Nothing on the calendar for the next 60 days</string>
+    <string name="gts_tomorrow">Tomorrow</string>
     <string-array name="gts_compass_points">
         <item>N</item>
         <item>NE</item>

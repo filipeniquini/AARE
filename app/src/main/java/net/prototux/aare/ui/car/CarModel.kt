@@ -109,6 +109,12 @@ class CarUiState {
     var weather by mutableStateOf<Weather?>(null)
     /** The next calendar event, for the dashboard. */
     var nextEvent by mutableStateOf<NextEvent?>(null)
+    /** The next few calendar events, weeks ahead if need be (the clock card's agenda). */
+    var events by mutableStateOf<List<NextEvent>>(emptyList())
+    /** The country's next public holiday (the clock card). */
+    var holiday by mutableStateOf<net.prototux.aare.car.Holiday?>(null)
+    /** What the card over the player shows: [net.prototux.aare.Settings.CORNER_CAR] or [net.prototux.aare.Settings.CORNER_CLOCK]. */
+    var cornerCard by mutableStateOf(net.prototux.aare.Settings.CORNER_CAR)
     /** The phone call ringing or on, if any. */
     var call by mutableStateOf<CarCall?>(null)
     /** The apps opened last, newest first (ids): the rail shows the recent ones. */

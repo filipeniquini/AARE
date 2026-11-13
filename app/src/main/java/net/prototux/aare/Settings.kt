@@ -112,6 +112,14 @@ class Settings(context: Context) {
         get() = prefs.getString("car_style", STYLE_AUTO) ?: STYLE_AUTO
         set(v) = prefs.edit { putString("car_style", v) }
 
+    /**
+     * The card over the player: the car ([CORNER_CAR]: speed, OBD2 or the drive by GPS, weather) or
+     * the clock ([CORNER_CLOCK]: time, the full weather and the agenda), the user's choice (2026-11-13).
+     */
+    var cornerCard: String
+        get() = prefs.getString("corner_card", CORNER_CAR) ?: CORNER_CAR
+        set(v) = prefs.edit { putString("corner_card", v) }
+
     /** How much the car screen animates: [MOTION_FULL], [MOTION_REDUCED] or [MOTION_OFF]. */
     var carAnimations: String
         get() = prefs.getString("car_animations", MOTION_FULL) ?: MOTION_FULL
@@ -434,6 +442,8 @@ class Settings(context: Context) {
         const val STYLE_CARPLAY = "carplay"
         const val STYLE_GTS = "gts"
         const val MOTION_FULL = "full"
+        const val CORNER_CAR = "car"
+        const val CORNER_CLOCK = "clock"
         const val MOTION_REDUCED = "reduced"
         const val MOTION_OFF = "off"
         const val KEY_UI_SCALE = "ui_scale_percent"

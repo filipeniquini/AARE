@@ -295,6 +295,7 @@ class CarRuntime(
         ui.gtsStyle = gts
         ui.darkBar = settings.darkBar
         ui.motion = net.prototux.aare.ui.car.CarMotion.of(settings.carAnimations)
+        ui.cornerCard = settings.cornerCard
         ui.barApps = settings.barApps
         ui.barRecents = settings.barRecents
         val wallpaper = settings.wallpaper
@@ -318,7 +319,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }
@@ -625,6 +626,7 @@ class CarRuntime(
     /** The weather (every 30 minutes) and the next calendar event (every 5), for the rail and the dashboard. */
     private suspend fun watchDashboardInfo() {
         var lastWeather = 0L
+        var lastHoliday = 0L
         while (true) {
             val now = System.currentTimeMillis()
             if (!settings.showWeather) ui.weather = null
@@ -634,8 +636,17 @@ class CarRuntime(
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DashboardInfo.weather(where) }?.let { ui.weather = it; lastWeather = now; applyScreenSettings() }
                 }
             }
+            val events = if (settings.showCalendar)
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DashboardInfo.upcomingEvents(context, AGENDA_EVENTS, AGENDA_HOURS) } else emptyList()
+            ui.events = events
+            // The other screens' event card: the coming 12 hours only, as before.
             ui.nextEvent = if (settings.showCalendar)
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DashboardInfo.nextEvent(context) } else null
+            // The next holiday, for the clock card: asked twice a day (it changes once in weeks).
+            if (settings.showCalendar && now - lastHoliday > 12 * 3_600_000L) {
+                val country = context.resources.configuration.locales[0]?.country.orEmpty().ifBlank { java.util.Locale.getDefault().country }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { DashboardInfo.nextHoliday(country) }?.let { ui.holiday = it; lastHoliday = now }
+            }
             kotlinx.coroutines.delay(5 * 60_000)
         }
     }
@@ -1147,6 +1158,10 @@ class CarRuntime(
         private const val ASSISTANT_HOST = "com.google.android.googlequicksearchbox"
         /** How long the floating window takes to come up before falling back to the Gemini app. */
         private const val ASSIST_CHECK_MS = 2_500L
+        /** The clock card's agenda: the next events it lists. */
+        private const val AGENDA_EVENTS = 3
+        /** How far ahead the clock card's agenda looks: the next event, even weeks away. */
+        private const val AGENDA_HOURS = 60 * 24
         /** The longest the music waits for the assistant's window to close. */
         private const val ASSIST_WATCH_MS = 120_000L
         private const val PROBE_DELAY_MS = 8_000L

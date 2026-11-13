@@ -175,10 +175,11 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("car_animations")?.let { Settings(this).carAnimations = it }
         // Comparing map apps in the map card (frame rate tests).
         intent.getStringExtra("map_card_app")?.let { Settings(this).mapCardApp = it }
+        intent.getStringExtra("corner_card")?.let { Settings(this).cornerCard = it }
         if (intent.hasExtra("aod_off")) Settings(this).aodOffInCar = intent.getBooleanExtra("aod_off", false)
         // Measuring with and without the protocol trace.
         if (intent.hasExtra("verbose_log")) intent.getBooleanExtra("verbose_log", false).let { Settings(this).verboseProtocolLog = it; SessionAapLog.verbose = it }
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("verbose_log")
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }

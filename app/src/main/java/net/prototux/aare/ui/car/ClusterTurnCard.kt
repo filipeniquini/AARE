@@ -49,8 +49,8 @@ internal fun ClusterTurnCard(ui: CarUiState, runtime: CarRuntime, modifier: Modi
                 if (road.isNotBlank()) Text(road, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                 trip.destinationTravelEstimates.firstOrNull()?.arrivalTimeAtDestination?.let { eta ->
                     Spacer(Modifier.height(8.dp))
-                    Text(stringResource(R.string.cluster_arrival_time, DateFormat.getTimeFormat(context).format(eta.timeSinceEpochMillis)),
-                        style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+                    AccentText(stringResource(R.string.cluster_arrival_time, DateFormat.getTimeFormat(context).format(eta.timeSinceEpochMillis)),
+                        MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleMedium)
                 }
             }
             phone != null -> {
@@ -61,7 +61,7 @@ internal fun ClusterTurnCard(ui: CarUiState, runtime: CarRuntime, modifier: Modi
                 if (phone.secondary.isNotBlank()) Text(phone.secondary, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 2)
                 if (phone.detail.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
-                    Text(phone.detail, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    AccentText(phone.detail, MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall)
                 }
             }
             else -> {

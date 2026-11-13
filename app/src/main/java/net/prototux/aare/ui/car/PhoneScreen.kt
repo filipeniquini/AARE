@@ -190,8 +190,8 @@ private fun FullCall(call: CarCall?, modifier: Modifier, onHangUp: () -> Unit) {
             Text(stringResource(if (call?.ringing == true) R.string.phone_incoming_call else R.string.phone_call_in_progress),
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(name, style = MaterialTheme.typography.displaySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (since != null && call.ringing.not()) Text("%d:%02d".format(elapsed / 60, elapsed % 60),
-                style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
+            if (since != null && call.ringing.not()) AccentText("%d:%02d".format(elapsed / 60, elapsed % 60),
+                MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.headlineMedium)
         }
         Spacer(Modifier.width(36.dp))
         if (Calls.canEnd) Box(Modifier.size(120.dp).clip(CircleShape).background(Color(0xFFD32F2F)).clickable(onClick = onHangUp), contentAlignment = Alignment.Center) {
