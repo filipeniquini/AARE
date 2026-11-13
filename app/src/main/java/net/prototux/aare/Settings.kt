@@ -212,6 +212,19 @@ class Settings(context: Context) {
         get() = prefs.getStringSet("pause_in_car", emptySet()) ?: emptySet()
         set(v) = prefs.edit { putStringSet("pause_in_car", HashSet(v)) }
 
+    /**
+     * Turn the phone's always-on display off while the car is connected. Locked with it on (Doze),
+     * Android drew the mirrored apps at 30 fps instead of 60: the map card stuttered (2026-11-12).
+     */
+    var aodOffInCar: Boolean
+        get() = prefs.getBoolean("aod_off_in_car", false)
+        set(v) = prefs.edit { putBoolean("aod_off_in_car", v) }
+
+    /** AARE turned the always-on display off and owes turning it back on (even after a crash). */
+    var aodTurnedOff: Boolean
+        get() = prefs.getBoolean("aod_turned_off", false)
+        set(v) = prefs.edit { putBoolean("aod_turned_off", v) }
+
     /** The apps paused now, to let them run again even if AARE was gone when the car left. */
     var pausedNow: Set<String>
         get() = prefs.getStringSet("paused_now", emptySet()) ?: emptySet()

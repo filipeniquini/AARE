@@ -403,6 +403,8 @@
     <string name="car_saving_section">Poupança no carro</string>
     <string name="car_saving_cleanup_title">Limpar ao ligar ao carro</string>
     <string name="car_saving_cleanup_subtitle">Termina as aplicações paradas em segundo plano (como o Android faz quando falta memória). Continuam a receber notificações e abrem normalmente.</string>
+    <string name="car_saving_aod_title">Desligar o ecrã sempre ligado no carro</string>
+    <string name="car_saving_aod_subtitle">Ligado e com o telemóvel bloqueado, o Android desenha as aplicações espelhadas (o cartão do mapa) a 30 imagens por segundo em vez de 60. Desliga-se quando o carro liga e volta quando sai.</string>
     <string name="car_saving_pause">Aplicações a pausar no carro (%1$d escolhidas)</string>
     <string name="car_saving_pause_hint">Estas param por completo enquanto o carro está ligado (sem notificações) e voltam a poder correr quando ele sai. Para aplicações pesadas de que não precisa na estrada.</string>
     <string name="phone_apps_kind_social">Mensagens ou rede social: bloqueada com o telemóvel bloqueado</string>

@@ -53,6 +53,12 @@ interface IShellAudio {
      */
     boolean pauseApp(String packageName, boolean pause) = 10;
 
+    /**
+     * Turns the phone's always-on display (secure doze_always_on) on or off; that one setting
+     * only. Returns whether it was on before the call, or null if it couldn't be read or written.
+     */
+    String setAlwaysOnDisplay(boolean on) = 11;
+
     /** Shizuku's user-service teardown call. */
     void destroy() = 16777114;
 }

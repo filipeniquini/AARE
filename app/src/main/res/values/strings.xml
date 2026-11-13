@@ -545,6 +545,8 @@
     <string name="car_saving_section">Saving in the car</string>
     <string name="car_saving_cleanup_title">Clean up when the car connects</string>
     <string name="car_saving_cleanup_subtitle">Ends the apps idle in the background (as Android does when memory runs short). They keep their notifications and open normally.</string>
+    <string name="car_saving_aod_title">Always-on display off in the car</string>
+    <string name="car_saving_aod_subtitle">With it on and the phone locked, Android draws the mirrored apps (the map card) at 30 frames per second instead of 60. Turned off when the car connects and back on when it leaves.</string>
     <string name="car_saving_pause">Apps to pause in the car (%1$d chosen)</string>
     <string name="car_saving_pause_hint">These stop completely while the car is connected (no notifications) and may run again when it leaves. For heavy apps not needed on the road.</string>
     <string name="phone_apps_kind_social">Messages or social: locked phone blocks it</string>

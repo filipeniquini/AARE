@@ -45,20 +45,35 @@ object PhoneCleanup {
         val keep = inUse + listOfNotNull(settings.lastMediaApp, settings.lastPhoneMedia, settings.lastNavApp)
         val toPause = settings.pauseInCar - inUse - context.packageName
         val clean = settings.cleanUpInCar
-        if (toPause.isEmpty() && !clean) return
+        val aodOff = settings.aodOffInCar
+        if (toPause.isEmpty() && !clean && !aodOff) return
         val app = context.applicationContext
         worker.execute {
             val before = PhoneMemory.read()
             // Remembered before pausing: if AARE is gone when the car leaves, the next start frees them.
             settings.pausedNow = settings.pausedNow + toPause
+            // The same for the always-on display: owed back before it is turned off.
+            if (aodOff) settings.aodTurnedOff = true
+            // One helper call for all: two at once (or back to back) lost one (2026-11-12 test).
             fun run() = ShellOnce.call(app) { shell ->
                 val paused = toPause.filter { shell.pauseApp(it, true) }
-                paused to (if (clean) shell.killAllBackground(keep.toTypedArray()) else -1)
+                val aod = if (aodOff) shell.setAlwaysOnDisplay(false) else null
+                Triple(paused, if (clean) shell.killAllBackground(keep.toTypedArray()) else -1, aod)
             }
             // Right after a reconnection the helper wasn't there yet twice (2026-11-11 drive, "no
             // Shizuku" a second after the session started): one more try a moment later.
-            val result = run() ?: run { Thread.sleep(RETRY_MS); run() }
+            val first = run()
+            val result = first ?: run { Thread.sleep(RETRY_MS); run() }
+            // Not owed when it was off already, as the first answer says (an unanswered first try
+            // may have turned it off itself: then it stays owed).
+            if (aodOff && first != null && first.third != "true") settings.aodTurnedOff = false
             if (result == null) { DiagLog.add("phone clean-up: no Shizuku"); return@execute }
+            if (aodOff) DiagLog.add("always-on display: " + when (result.third) {
+                "true" -> "off while the car is connected"
+                null -> "can't turn it off"
+                else -> "was off already"
+            })
+            if (toPause.isEmpty() && !clean) return@execute
             Thread.sleep(SETTLE_MS)
             val after = PhoneMemory.read()
             val (paused, cleaned) = result
@@ -69,15 +84,24 @@ object PhoneCleanup {
         }
     }
 
-    /** The car left (or AARE starts again after it was gone): the paused apps may run again. */
+    /**
+     * The car left (or AARE starts again after it was gone): the paused apps may run again, and
+     * the always-on display comes back if AARE turned it off (see [Settings.aodOffInCar]).
+     */
     fun atDisconnect(context: Context, settings: Settings) {
         val paused = settings.pausedNow
-        if (paused.isEmpty()) return
+        val aodBack = settings.aodTurnedOff
+        if (paused.isEmpty() && !aodBack) return
         val app = context.applicationContext
         worker.execute {
-            val done = ShellOnce.call(app) { shell -> paused.filter { shell.pauseApp(it, false) } }
-            if (done != null) settings.pausedNow = settings.pausedNow - done.toSet()
-            DiagLog.add("phone clean-up: running again ${done?.joinToString() ?: "(no Shizuku)"}")
+            fun run() = ShellOnce.call(app) { shell ->
+                paused.filter { shell.pauseApp(it, false) } to (aodBack && shell.setAlwaysOnDisplay(true) != null)
+            }
+            val result = run() ?: run { Thread.sleep(RETRY_MS); run() }
+            if (result != null) settings.pausedNow = settings.pausedNow - result.first.toSet()
+            if (result?.second == true) settings.aodTurnedOff = false
+            if (paused.isNotEmpty()) DiagLog.add("phone clean-up: running again ${result?.first?.joinToString() ?: "(no Shizuku)"}")
+            if (aodBack) DiagLog.add("always-on display: ${if (result?.second == true) "on again" else "can't turn it back on, next time"}")
         }
     }
 }

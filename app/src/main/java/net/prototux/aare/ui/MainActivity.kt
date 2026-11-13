@@ -173,9 +173,12 @@ class MainActivity : ComponentActivity() {
         // Tests of every style's car screen (auto, gts, carplay).
         intent.getStringExtra("car_style")?.let { Settings(this).carStyle = it }
         intent.getStringExtra("car_animations")?.let { Settings(this).carAnimations = it }
+        // Comparing map apps in the map card (frame rate tests).
+        intent.getStringExtra("map_card_app")?.let { Settings(this).mapCardApp = it }
+        if (intent.hasExtra("aod_off")) Settings(this).aodOffInCar = intent.getBooleanExtra("aod_off", false)
         // Measuring with and without the protocol trace.
         if (intent.hasExtra("verbose_log")) intent.getBooleanExtra("verbose_log", false).let { Settings(this).verboseProtocolLog = it; SessionAapLog.verbose = it }
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("verbose_log")
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("verbose_log")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
@@ -1144,6 +1147,7 @@ private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
 private fun CarSavingSection(settings: Settings) {
     val ctx = LocalContext.current
     var clean by remember { mutableStateOf(settings.cleanUpInCar) }
+    var aodOff by remember { mutableStateOf(settings.aodOffInCar) }
     var paused by remember { mutableStateOf(settings.pauseInCar) }
     var filter by remember { mutableStateOf("") }
     val chosenAtOpen = remember { settings.pauseInCar }
@@ -1158,6 +1162,7 @@ private fun CarSavingSection(settings: Settings) {
     }
     Section(stringResource(R.string.car_saving_section)) {
         Toggle(stringResource(R.string.car_saving_cleanup_title), stringResource(R.string.car_saving_cleanup_subtitle), clean) { clean = it; settings.cleanUpInCar = it }
+        Toggle(stringResource(R.string.car_saving_aod_title), stringResource(R.string.car_saving_aod_subtitle), aodOff) { aodOff = it; settings.aodOffInCar = it }
         AppGroup(stringResource(R.string.car_saving_pause, paused.size))
         Text(stringResource(R.string.car_saving_pause_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         androidx.compose.material3.OutlinedTextField(filter, { filter = it }, Modifier.fillMaxWidth(),

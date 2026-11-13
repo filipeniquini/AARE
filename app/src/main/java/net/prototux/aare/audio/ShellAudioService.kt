@@ -228,6 +228,15 @@ class ShellAudioService : IShellAudio.Stub {
         (if (pause) run("am", "force-stop", packageName) else run("cmd", "package", "unstop", packageName)) != null
     }.getOrDefault(false)
 
+    override fun setAlwaysOnDisplay(on: Boolean): String? = runCatching {
+        // One fixed setting, a fixed value: nothing from the caller reaches the command.
+        val before = run("settings", "get", "secure", ALWAYS_ON_DISPLAY)?.trim() ?: return@runCatching null
+        // Unset means the phone's default, on for Pixels.
+        val wasOn = before != "0"
+        if (wasOn != on) run("settings", "put", "secure", ALWAYS_ON_DISPLAY, if (on) "1" else "0") ?: return@runCatching null
+        wasOn.toString()
+    }.onFailure { Log.w(TAG, "always-on display", it) }.getOrNull()
+
     override fun bluetoothAddress(): String? = runCatching {
         run("settings", "get", "secure", "bluetooth_address")?.trim()?.takeIf { Regex("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}").matches(it) }
     }.getOrNull()
@@ -267,6 +276,7 @@ class ShellAudioService : IShellAudio.Stub {
     private companion object {
         const val TAG = "AareShellAudio"
         const val SHELL_PACKAGE = "com.android.shell"
+        const val ALWAYS_ON_DISPLAY = "doze_always_on"
         const val ANDROID_AUTO_PACKAGE = AndroidAutoSwitch.PACKAGE
         const val AARE_PACKAGE = "net.prototux.aare"
         const val SHELL_UID = 2000
