@@ -585,6 +585,8 @@
     <string name="setup_animations_reduced">Reduced</string>
     <string name="setup_animations_off">Off</string>
     <string name="setup_hint_animations">On the car screen. Reduced keeps only what helps: buttons that sink under the finger and a quick fade between screens.</string>
+    <string name="setup_toggle_theme_follows_title">Phone theme follows the car</string>
+    <string name="setup_toggle_theme_follows_subtitle">While connected, the phone goes light by day and dark at night with the car screen, so Waze and Google Maps follow. Back to your theme when the car leaves.</string>
     <string name="setup_choice_corner_card">Card beside the map</string>
     <string name="setup_corner_car">Car</string>
     <string name="setup_corner_clock">Clock, weather and agenda</string>

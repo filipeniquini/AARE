@@ -253,6 +253,8 @@ class CarRuntime(
 
     /** The car's own day/night signal, if it sent one. */
     private var carNight: Boolean? = null
+    /** The phone's dark mode as AARE last set it this session, null when it hasn't. */
+    private var phoneNight: Boolean? = null
     /** The head unit's driver position. */
     var rightHandDrive = false
         set(v) { field = v; applyScreenSettings() }
@@ -288,6 +290,19 @@ class CarRuntime(
             ui.night = night
             configurationChanged()
         }
+        // The phone's light or dark mode with the car screen's, for the mirrored map apps.
+        // Only once day or night is known (the car's signal, a fixed theme or the weather): the
+        // first guess, dark, flipped the phone to dark and to light again at every connection.
+        val known = settings.carTheme != Settings.THEME_AUTO || carNight != null || ui.weather != null
+        if (primary && known) {
+            if (settings.themeFollowsCar) {
+                if (phoneNight != night) { phoneNight = night; PhoneCleanup.phoneTheme(context, settings, night) }
+            } else if (phoneNight != null) {
+                // Turned off during the drive: the phone's own mode back now.
+                phoneNight = null
+                PhoneCleanup.atDisconnect(context, settings)
+            }
+        }
         val position = settings.railPosition
         // Passenger mode lifts the driving restrictions (keyboard, list lengths, phone screen).
         ui.drivingRestricted = carDriving && !settings.ignoreDriving
@@ -319,7 +334,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "car_style", "dark_bar", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }

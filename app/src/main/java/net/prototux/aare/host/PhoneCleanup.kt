@@ -91,17 +91,47 @@ object PhoneCleanup {
     fun atDisconnect(context: Context, settings: Settings) {
         val paused = settings.pausedNow
         val aodBack = settings.aodTurnedOff
-        if (paused.isEmpty() && !aodBack) return
+        if (paused.isEmpty() && !aodBack && settings.nightModeBefore == null) return
         val app = context.applicationContext
         worker.execute {
+            // Read here, in order: a theme change queued just before may have saved it.
+            val themeBack = settings.nightModeBefore
             fun run() = ShellOnce.call(app) { shell ->
-                paused.filter { shell.pauseApp(it, false) } to (aodBack && shell.setAlwaysOnDisplay(true) != null)
+                Triple(paused.filter { shell.pauseApp(it, false) }, aodBack && shell.setAlwaysOnDisplay(true) != null,
+                    themeBack != null && shell.setNightMode(themeBack))
             }
             val result = run() ?: run { Thread.sleep(RETRY_MS); run() }
             if (result != null) settings.pausedNow = settings.pausedNow - result.first.toSet()
             if (result?.second == true) settings.aodTurnedOff = false
+            if (result?.third == true) settings.nightModeBefore = null
             if (paused.isNotEmpty()) DiagLog.add("phone clean-up: running again ${result?.first?.joinToString() ?: "(no Shizuku)"}")
             if (aodBack) DiagLog.add("always-on display: ${if (result?.second == true) "on again" else "can't turn it back on, next time"}")
+            if (themeBack != null) DiagLog.add("phone theme: ${if (result?.third == true) "back to night mode $themeBack" else "can't put it back, next time"}")
+        }
+    }
+
+    /**
+     * The car screen went light or dark: the phone's mode the same, so the mirrored map apps
+     * follow (see [Settings.themeFollowsCar]). The phone's own mode is saved first, once, and
+     * given back when the car leaves ([atDisconnect]), even after a crash.
+     */
+    fun phoneTheme(context: Context, settings: Settings, night: Boolean) {
+        val app = context.applicationContext
+        worker.execute {
+            val mode = if (night) "yes" else "no"
+            fun run() = ShellOnce.call(app) { shell ->
+                // Read before the first change (read only: a retry can't save AARE's own choice).
+                if (settings.nightModeBefore == null) {
+                    val now = shell.nightMode()
+                    // A schedule of the user's own ("custom") can't be put back the same way:
+                    // then the phone's mode is left alone.
+                    if (now !in setOf("yes", "no", "auto")) return@call false
+                    settings.nightModeBefore = now
+                }
+                shell.setNightMode(mode)
+            }
+            val done = run() ?: run { Thread.sleep(RETRY_MS); run() }
+            DiagLog.add("phone theme: ${if (done == true) "night mode $mode, as the car screen" else "can't change it"}")
         }
     }
 }

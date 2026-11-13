@@ -176,10 +176,11 @@ class MainActivity : ComponentActivity() {
         // Comparing map apps in the map card (frame rate tests).
         intent.getStringExtra("map_card_app")?.let { Settings(this).mapCardApp = it }
         intent.getStringExtra("corner_card")?.let { Settings(this).cornerCard = it }
+        if (intent.hasExtra("theme_follows")) Settings(this).themeFollowsCar = intent.getBooleanExtra("theme_follows", false)
         if (intent.hasExtra("aod_off")) Settings(this).aodOffInCar = intent.getBooleanExtra("aod_off", false)
         // Measuring with and without the protocol trace.
         if (intent.hasExtra("verbose_log")) intent.getBooleanExtra("verbose_log", false).let { Settings(this).verboseProtocolLog = it; SessionAapLog.verbose = it }
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log")
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("theme_follows") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
@@ -707,6 +708,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var style by remember { mutableStateOf(settings.carStyle) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
     var corner by remember { mutableStateOf(settings.cornerCard) }
+    var themeFollows by remember { mutableStateOf(settings.themeFollowsCar) }
     val scope = rememberCoroutineScope()
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
@@ -748,6 +750,10 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
             }
             Text(stringResource(R.string.setup_hint_animations), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            Spacer(Modifier.height(12.dp))
+            Toggle(stringResource(R.string.setup_toggle_theme_follows_title), stringResource(R.string.setup_toggle_theme_follows_subtitle), themeFollows) {
+                themeFollows = it; settings.themeFollowsCar = it
+            }
         }
         Section(stringResource(R.string.setup_section_dashboard)) {
             RadioChoices(stringResource(R.string.setup_choice_corner_card), net.prototux.aare.ui.car.cornerCardChoices(), corner) {

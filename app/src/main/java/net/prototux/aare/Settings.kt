@@ -228,6 +228,19 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("aod_off_in_car", false)
         set(v) = prefs.edit { putBoolean("aod_off_in_car", v) }
 
+    /**
+     * The phone's light or dark mode follows the car screen's (day, night) while connected: the
+     * mirrored map apps (Waze, Google Maps) follow the phone's mode (2026-11-13).
+     */
+    var themeFollowsCar: Boolean
+        get() = prefs.getBoolean("theme_follows_car", false)
+        set(v) = prefs.edit { putBoolean("theme_follows_car", v) }
+
+    /** The phone's dark mode before AARE changed it ("yes", "no", "auto"), owed back; null when nothing is owed. */
+    var nightModeBefore: String?
+        get() = prefs.getString("night_mode_before", null)
+        set(v) = prefs.edit { if (v == null) remove("night_mode_before") else putString("night_mode_before", v) }
+
     /** AARE turned the always-on display off and owes turning it back on (even after a crash). */
     var aodTurnedOff: Boolean
         get() = prefs.getBoolean("aod_turned_off", false)

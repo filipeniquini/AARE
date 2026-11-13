@@ -59,6 +59,12 @@ interface IShellAudio {
      */
     String setAlwaysOnDisplay(boolean on) = 11;
 
+    /** The phone's dark mode now (cmd uimode night: "yes", "no", "auto"...), or null. */
+    String nightMode() = 12;
+
+    /** Sets the phone's dark mode to one of "yes", "no", "auto" (nothing else). Returns whether it worked. */
+    boolean setNightMode(String mode) = 13;
+
     /** Shizuku's user-service teardown call. */
     void destroy() = 16777114;
 }

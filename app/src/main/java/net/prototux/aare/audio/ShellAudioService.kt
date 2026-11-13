@@ -237,6 +237,17 @@ class ShellAudioService : IShellAudio.Stub {
         wasOn.toString()
     }.onFailure { Log.w(TAG, "always-on display", it) }.getOrNull()
 
+    override fun nightMode(): String? = runCatching {
+        // "Night mode: yes"
+        run("cmd", "uimode", "night")?.substringAfter(':', "")?.trim()?.takeIf { it.isNotEmpty() }
+    }.onFailure { Log.w(TAG, "night mode", it) }.getOrNull()
+
+    override fun setNightMode(mode: String?): Boolean = runCatching {
+        // Fixed values only: nothing else from the caller reaches the command.
+        require(mode in NIGHT_MODES) { "not a night mode" }
+        run("cmd", "uimode", "night", mode!!) != null
+    }.onFailure { Log.w(TAG, "set night mode", it) }.getOrDefault(false)
+
     override fun bluetoothAddress(): String? = runCatching {
         run("settings", "get", "secure", "bluetooth_address")?.trim()?.takeIf { Regex("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}").matches(it) }
     }.getOrNull()
@@ -277,6 +288,7 @@ class ShellAudioService : IShellAudio.Stub {
         const val TAG = "AareShellAudio"
         const val SHELL_PACKAGE = "com.android.shell"
         const val ALWAYS_ON_DISPLAY = "doze_always_on"
+        val NIGHT_MODES = setOf("yes", "no", "auto")
         const val ANDROID_AUTO_PACKAGE = AndroidAutoSwitch.PACKAGE
         const val AARE_PACKAGE = "net.prototux.aare"
         const val SHELL_UID = 2000
