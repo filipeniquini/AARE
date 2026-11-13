@@ -117,6 +117,9 @@ private fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Un
 internal fun cornerCardChoices(): List<Pair<String, String>> = listOf(
     Settings.CORNER_CAR to stringResource(R.string.setup_corner_car),
     Settings.CORNER_CLOCK to stringResource(R.string.setup_corner_clock),
+    Settings.CORNER_TURN to stringResource(R.string.setup_corner_turn),
+    Settings.CORNER_TRIP to stringResource(R.string.setup_corner_trip),
+    Settings.CORNER_SHORTCUTS to stringResource(R.string.setup_corner_shortcuts),
 )
 
 /** The animation levels, for the phone's and the car's settings. */

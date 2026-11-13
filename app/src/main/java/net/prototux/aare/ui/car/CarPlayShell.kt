@@ -150,7 +150,8 @@ private fun Dock(state: CarUiState, actions: CarActions, horizontal: Boolean = f
         return
     }
     Column(
-        Modifier.fillMaxHeight().width(96.dp).background(Color(0xFF0E0E0F)).padding(vertical = 14.dp),
+        // Slimmer than its first 96 dp, like the other styles' bars (2026-11-13).
+        Modifier.fillMaxHeight().width(CARPLAY_RAIL).background(Color(0xFF0E0E0F)).padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Clock()
@@ -163,7 +164,7 @@ private fun Dock(state: CarUiState, actions: CarActions, horizontal: Boolean = f
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                listOfNotNull(nav, media, phone).forEach { app -> SquircleIcon(app, 60) { actions.openApp(app) } }
+                listOfNotNull(nav, media, phone).forEach { app -> SquircleIcon(app, CARPLAY_RAIL_ICON) { actions.openApp(app) } }
             }
         }
         voice()
@@ -225,3 +226,7 @@ private fun SquircleIcon(app: CarAppEntry, sizeDp: Int, onClick: (() -> Unit)?) 
         else Text(app.label.take(1), color = Color.White, fontSize = (sizeDp / 2.5f).sp, fontWeight = FontWeight.SemiBold)
     }
 }
+
+/** The side bar's width and its app icons (dp). */
+private val CARPLAY_RAIL = 80.dp
+private const val CARPLAY_RAIL_ICON = 52

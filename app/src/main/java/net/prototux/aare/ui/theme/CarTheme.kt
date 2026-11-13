@@ -42,8 +42,11 @@ data class CarDimens(
 /** Its cards sit closer together too (2026-11-11: the gaps wasted screen the player could use). */
 val GtsCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp, gutter = 6.dp)
 
-/** The other styles' home screens with the same closer cards (2026-11-12: our changes in every style). */
-val TightCarDimens = CarDimens(gutter = 6.dp)
+/**
+ * The other styles with the same closer cards (2026-11-12) and, since 2026-11-13, the GTS bar's
+ * slimmer size too: Google's 96 dp bar took a big share of the VW Play's short screen.
+ */
+val TightCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp, gutter = 6.dp)
 
 val LocalCarDimens = staticCompositionLocalOf { CarDimens() }
 

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.Celebration
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
+import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material.icons.rounded.OndemandVideo
 import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material.icons.rounded.Speed
@@ -101,7 +102,7 @@ internal fun GtsDashboard(
         val boxW = maxWidth
         val boxH = maxHeight
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
-            CarInfoCard(state, Modifier.weight(1f).fillMaxWidth())
+            CarInfoCard(state, Modifier.weight(1f).fillMaxWidth(), actions)
             GtsMediaCard(state, actions, Modifier.playerSize(boxW, boxH - gutter))
         }
         }
@@ -114,9 +115,9 @@ internal fun GtsDashboard(
  * styles in their own card color.
  */
 @Composable
-internal fun CarInfoCard(state: CarUiState, modifier: Modifier) {
+internal fun CarInfoCard(state: CarUiState, modifier: Modifier, actions: CarActions? = null) {
     if (!net.prototux.aare.ui.theme.LocalGtsStyle.current) {
-        Card(modifier) { CornerCard(state, Modifier.fillMaxSize()) }
+        Card(modifier) { CornerCard(state, actions, Modifier.fillMaxSize()) }
         return
     }
     // Grey, like the car's own VW Play screens, with its insides in matching greys.
@@ -130,7 +131,7 @@ internal fun CarInfoCard(state: CarUiState, modifier: Modifier) {
             surfaceContainerHighest = if (night) Color(0xFF26272B) else Color(0x40000000),
             onSurface = if (night) Color(0xFFE6E7EA) else Color.White,
             onSurfaceVariant = if (night) Color(0xFF9A9FA8) else Color(0xFFC9CCD1),
-        )) { CornerCard(state, Modifier.fillMaxSize()) }
+        )) { CornerCard(state, actions, Modifier.fillMaxSize()) }
     }
 }
 
@@ -237,11 +238,190 @@ private fun GtsCarCard(state: CarUiState, modifier: Modifier) {
     }
 }
 
-/** The card the user picked for this corner: the car's, or the clock with the weather and the agenda. */
+/**
+ * The card the user picked for this corner: the car's, the clock with the weather and the agenda,
+ * the next maneuver, the trip, or shortcuts to apps.
+ */
 @Composable
-private fun CornerCard(state: CarUiState, modifier: Modifier) {
-    if (state.cornerCard == net.prototux.aare.Settings.CORNER_CLOCK) GtsClockCard(state, modifier) else GtsCarCard(state, modifier)
+private fun CornerCard(state: CarUiState, actions: CarActions?, modifier: Modifier) {
+    when (state.cornerCard) {
+        net.prototux.aare.Settings.CORNER_CLOCK -> GtsClockCard(state, modifier)
+        net.prototux.aare.Settings.CORNER_TURN -> GtsTurnCard(state, modifier)
+        net.prototux.aare.Settings.CORNER_TRIP -> GtsTripCard(state, modifier)
+        net.prototux.aare.Settings.CORNER_SHORTCUTS -> GtsShortcutsCard(state, actions, modifier)
+        else -> GtsCarCard(state, modifier)
+    }
 }
+
+/** Loads a navigation app's maneuver icon (provided by the car runtime; nothing outside it). */
+val LocalTripIcon = androidx.compose.runtime.compositionLocalOf<(androidx.car.app.model.CarIcon, String?) -> androidx.compose.ui.graphics.ImageBitmap?> { { _, _ -> null } }
+
+/** The card's text without the theme's tall line heights (they pushed rows out of small cards). */
+@Composable
+private fun TightText(content: @Composable () -> Unit) =
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalTextStyle provides
+        androidx.compose.material3.LocalTextStyle.current.copy(lineHeight = androidx.compose.ui.unit.TextUnit.Unspecified), content = content)
+
+/**
+ * The next maneuver (2026-11-13): the turn arrow big, the distance and the road, and the arrival.
+ * From the navigation app on the car screen (its trip) or the one guiding on the phone (Waze,
+ * Google Maps: its notification). Without a route: the time, and how to start one.
+ */
+@Composable
+private fun GtsTurnCard(state: CarUiState, modifier: Modifier) {
+    val context = LocalContext.current
+    val phone = state.phoneGuidance
+    val trip = state.trip
+    val step = trip?.steps?.firstOrNull()
+    val loadIcon = LocalTripIcon.current
+    TightText {
+    BoxWithConstraints(modifier) {
+        val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
+        Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f)), verticalArrangement = Arrangement.Center) {
+            when {
+                step != null -> {
+                    val icon = step.maneuver?.icon?.let { loadIcon(it, state.tripPackage) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (icon != null) {
+                            Image(icon, null, Modifier.size(s.dp(120f)))
+                            Spacer(Modifier.width(s.dp(16f)))
+                        }
+                        trip.stepTravelEstimates.firstOrNull()?.remainingDistance?.let { d ->
+                            Text(net.prototux.aare.host.templates.CarFormat.distance(d.displayDistance, d.displayUnit), fontSize = s.sp(48f),
+                                fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                        }
+                    }
+                    Spacer(Modifier.height(s.dp(14f)))
+                    val road = (step.road ?: step.cue ?: trip.currentRoad)?.toString().orEmpty()
+                    if (road.isNotBlank()) Text(road, fontSize = s.sp(26f), color = MaterialTheme.colorScheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    trip.destinationTravelEstimates.firstOrNull()?.arrivalTimeAtDestination?.let { eta ->
+                        Spacer(Modifier.height(s.dp(14f)))
+                        AccentText(stringResource(R.string.cluster_arrival_time, DateFormat.getTimeFormat(context).format(eta.timeSinceEpochMillis)),
+                            MaterialTheme.colorScheme.primary, fontSize = s.sp(18f), fontWeight = FontWeight.Bold)
+                    }
+                }
+                phone != null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        phone.arrow?.let { a ->
+                            Image(a.asImageBitmap(), null, Modifier.size(s.dp(120f)),
+                                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(MaterialTheme.colorScheme.onSurface, androidx.compose.ui.graphics.BlendMode.SrcIn))
+                            Spacer(Modifier.width(s.dp(16f)))
+                        }
+                        Text(phone.primary, fontSize = s.sp(36f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    }
+                    if (phone.secondary.isNotBlank()) {
+                        Spacer(Modifier.height(s.dp(14f)))
+                        Text(phone.secondary, fontSize = s.sp(24f), color = MaterialTheme.colorScheme.onSurface, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (phone.detail.isNotBlank()) {
+                        Spacer(Modifier.height(s.dp(14f)))
+                        AccentText(phone.detail, MaterialTheme.colorScheme.primary, fontSize = s.sp(18f), fontWeight = FontWeight.Bold, maxLines = 2)
+                    }
+                    Spacer(Modifier.height(s.dp(10f)))
+                    Text(stringResource(R.string.nav_guidance_on_phone, phone.appLabel), fontSize = s.sp(13f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                else -> {
+                    val now = minuteClock()
+                    Text(DateFormat.getTimeFormat(context).format(java.util.Date(now)), fontSize = s.sp(80f), fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    Text(today(), fontSize = s.sp(22f), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(s.dp(36f)))
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(s.dp(12f))).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .padding(s.dp(14f)), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Navigation, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(s.dp(40f)))
+                        Spacer(Modifier.width(s.dp(14f)))
+                        Column {
+                            Text(stringResource(R.string.gts_turn_none), fontSize = s.sp(24f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(R.string.gts_turn_none_hint), fontSize = s.sp(16f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+/**
+ * The trip (2026-11-13): the speed big and the arrival when a route is on, over the drive's six
+ * figures by GPS (distance, time, average and top speed, altitude, heading), bigger than the car
+ * card's.
+ */
+@Composable
+private fun GtsTripCard(state: CarUiState, modifier: Modifier) {
+    val context = LocalContext.current
+    val obdStatus by ObdReader.status.collectAsState()
+    val obd by ObdReader.readings.collectAsState()
+    val gps by GpsTrip.readings.collectAsState()
+    val speed = if (obdStatus.state == ObdReader.State.CONNECTED) obd?.speed else gps?.speed
+    val eta = state.trip?.destinationTravelEstimates?.firstOrNull()?.arrivalTimeAtDestination
+        ?.let { stringResource(R.string.cluster_arrival_time, DateFormat.getTimeFormat(context).format(it.timeSinceEpochMillis)) }
+        ?: state.phoneGuidance?.detail?.takeIf { it.isNotBlank() }
+    TightText {
+    BoxWithConstraints(modifier) {
+        val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
+        Column(Modifier.fillMaxSize().padding(horizontal = s.dp(22f), vertical = s.dp(16f))) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(speed?.let { "%.0f".format(it) } ?: "--", fontSize = s.sp(64f), lineHeight = s.sp(64f), fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                Spacer(Modifier.width(s.dp(10f)))
+                Text("KM/H", fontSize = s.sp(18f), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = s.dp(8f)))
+                Spacer(Modifier.weight(1f))
+                if (eta != null) AccentText(eta, MaterialTheme.colorScheme.primary, fontSize = s.sp(15f), fontWeight = FontWeight.Bold, maxLines = 2,
+                    modifier = Modifier.padding(bottom = s.dp(10f)).widthIn(max = s.dp(170f)))
+            }
+            Spacer(Modifier.height(s.dp(12f)))
+            // Two a row: wide boxes, so the figures can grow with the card's height.
+            GpsGrid(gps, s, Modifier.weight(1f).fillMaxWidth(), perRow = 2)
+        }
+    }
+    }
+}
+
+/**
+ * Shortcuts (2026-11-13): six apps a touch away, the ones opened last first, then the navigation,
+ * music and phone apps. Settings and the exit stay on the bar.
+ */
+@Composable
+private fun GtsShortcutsCard(state: CarUiState, actions: CarActions?, modifier: Modifier) {
+    val skip = setOf(CarAppKind.SETTINGS, CarAppKind.EXIT)
+    val recent = state.recentAppIds.mapNotNull { state.app(it) }
+    val usual = state.apps.filter { it.kind == CarAppKind.NAVIGATION || it.kind == CarAppKind.MEDIA || it.kind == CarAppKind.PHONE || it.kind == CarAppKind.PHONE_APP }
+    val apps = (recent + usual).filter { it.kind !in skip }.distinctBy { it.id }.take(SHORTCUTS)
+    TightText {
+    BoxWithConstraints(modifier) {
+        val s = scale(minOf(maxWidth.value / 400f, maxHeight.value / 420f))
+        Column(Modifier.fillMaxSize().padding(s.dp(14f)), verticalArrangement = Arrangement.spacedBy(s.dp(10f))) {
+            for (row in 0 until SHORTCUTS / 3) {
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(s.dp(10f))) {
+                    for (col in 0 until 3) {
+                        val app = apps.getOrNull(row * 3 + col)
+                        if (app == null) Spacer(Modifier.weight(1f))
+                        else {
+                            val press = rememberCarPress(0.95f)
+                            BoxWithConstraints(press.modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(s.dp(14f)))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clickable(press, enabled = actions != null) { actions?.openApp(app) }, contentAlignment = Alignment.Center) {
+                                val icon = (minOf(maxWidth.value, maxHeight.value) * 0.58f).toInt()
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    AppIcon(app, icon)
+                                    Spacer(Modifier.height(s.dp(8f)))
+                                    Text(app.label, fontSize = s.sp(16f), color = MaterialTheme.colorScheme.onSurface, maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = s.dp(6f)))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+/** The shortcuts card's apps: two rows of three. */
+private const val SHORTCUTS = 6
 
 /**
  * The clock card (2026-11-13, in place of the car's when the user picks it): the time big, the
@@ -524,7 +704,7 @@ private fun ReadingsGrid(r: ObdReadings?, s: Scale, modifier: Modifier) {
  * altitude and heading. Shown while no adapter is read.
  */
 @Composable
-private fun GpsGrid(g: GpsReadings?, s: Scale, modifier: Modifier) {
+private fun GpsGrid(g: GpsReadings?, s: Scale, modifier: Modifier, perRow: Int = 3) {
     fun f(v: Float?, pattern: String) = v?.let { pattern.format(it) } ?: "--"
     val minutes = (g?.elapsedMs ?: 0) / 60_000
     val points = androidx.compose.ui.res.stringArrayResource(R.array.gts_compass_points)
@@ -536,13 +716,13 @@ private fun GpsGrid(g: GpsReadings?, s: Scale, modifier: Modifier) {
         Triple(Icons.Rounded.KeyboardDoubleArrowUp, stringResource(R.string.gts_trip_top), f(g?.top, "%.0f") to "km/h"),
         Triple(Icons.Rounded.Terrain, stringResource(R.string.gts_trip_altitude), f(g?.altitude, "%.0f") to "m"),
         Triple(Icons.Rounded.Explore, stringResource(R.string.gts_trip_heading), (heading ?: "--") to (g?.bearing?.let { "%.0f°".format(it) } ?: "")),
-    ), s, modifier)
+    ), s, modifier, perRow)
 }
 
 @Composable
-private fun Grid(readings: List<Triple<ImageVector, String, Pair<String, String>>>, s: Scale, modifier: Modifier) {
+private fun Grid(readings: List<Triple<ImageVector, String, Pair<String, String>>>, s: Scale, modifier: Modifier, perRow: Int = 3) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(s.dp(8f))) {
-        readings.chunked(3).forEach { row ->
+        readings.chunked(perRow).forEach { row ->
             Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(s.dp(8f))) {
                 row.forEach { (icon, label, value) -> Reading(icon, label, value.first, value.second, s, Modifier.weight(1f).fillMaxHeight()) }
             }

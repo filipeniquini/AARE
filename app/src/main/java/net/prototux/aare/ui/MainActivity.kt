@@ -750,7 +750,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
         Section(stringResource(R.string.setup_section_dashboard)) {
-            Choices(stringResource(R.string.setup_choice_corner_card), net.prototux.aare.ui.car.cornerCardChoices(), corner) {
+            RadioChoices(stringResource(R.string.setup_choice_corner_card), net.prototux.aare.ui.car.cornerCardChoices(), corner) {
                 corner = it; settings.cornerCard = it
             }
             Text(stringResource(R.string.setup_hint_corner_card), style = MaterialTheme.typography.bodySmall,
@@ -987,6 +987,19 @@ private fun Choices(title: String, options: List<Pair<String, String>>, selected
             SegmentedButton(selected = value == selected, onClick = { onSelect(value) }, shape = SegmentedButtonDefaults.itemShape(i, options.size)) {
                 Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium)
             }
+        }
+    }
+}
+
+/** Like [Choices], one option a line: for more options, or longer names, than a row holds. */
+@Composable
+private fun RadioChoices(title: String, options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    Text(title, style = MaterialTheme.typography.bodyLarge)
+    Spacer(Modifier.height(2.dp))
+    options.forEach { (value, label) ->
+        Row(Modifier.fillMaxWidth().clickable { onSelect(value) }, verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.RadioButton(selected = value == selected, onClick = { onSelect(value) })
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

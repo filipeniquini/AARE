@@ -357,6 +357,8 @@
     <string name="gts_trip_heading">Rumo</string>
     <string name="gts_agenda_empty">Nada na agenda nos próximos 60 dias</string>
     <string name="gts_tomorrow">Amanhã</string>
+    <string name="gts_turn_none">Sem rota</string>
+    <string name="gts_turn_none_hint">Comece uma no Waze ou no Google Maps</string>
     <string-array name="gts_compass_points">
         <item>N</item>
         <item>NE</item>
@@ -551,5 +553,8 @@
     <string name="setup_choice_corner_card">Cartão ao lado do mapa</string>
     <string name="setup_corner_car">Carro</string>
     <string name="setup_corner_clock">Relógio, clima e agenda</string>
-    <string name="setup_hint_corner_card">Acima do player. Carro: velocidade, as leituras do adaptador OBD2 ou a viagem pelo GPS. Relógio: a hora, o clima completo, o próximo compromisso e feriado.</string>
+    <string name="setup_corner_turn">Próxima manobra</string>
+    <string name="setup_corner_trip">Viagem</string>
+    <string name="setup_corner_shortcuts">Atalhos</string>
+    <string name="setup_hint_corner_card">Acima do player. Carro: velocidade, as leituras do adaptador OBD2 ou a viagem pelo GPS. Relógio: a hora, o clima completo, o próximo compromisso e feriado. Próxima manobra: a seta e a distância da próxima curva. Viagem: velocidade, chegada e os números da viagem. Atalhos: seis apps a um toque.</string>
 </resources>

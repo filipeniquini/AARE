@@ -551,7 +551,7 @@ internal fun Dashboard(
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter)) {
                 NavCard(state, actions, navMap, Modifier.weight(1.6f).fillMaxWidth())
                 MediaCard(state, actions, compact = false, modifier = Modifier.align(Alignment.CenterHorizontally).playerSize(boxW, boxH))
-                CarInfoCard(state, Modifier.weight(0.9f).fillMaxWidth())
+                CarInfoCard(state, Modifier.weight(0.9f).fillMaxWidth(), actions)
                 val event = state.nextEvent
                 val latest = state.history.firstOrNull()
                 when {
@@ -579,7 +579,7 @@ internal fun Dashboard(
                     val boxW = maxWidth
                     val boxH = maxHeight
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CarInfoCard(state, Modifier.weight(1f).fillMaxWidth())
+                        CarInfoCard(state, Modifier.weight(1f).fillMaxWidth(), actions)
                         MediaCard(state, actions, compact = false, modifier = Modifier.playerSize(boxW, boxH - gutter))
                     }
                 }
@@ -604,7 +604,7 @@ internal fun Dashboard(
                     val boxW = maxWidth
                     val boxH = maxHeight
                     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(gutter), horizontalAlignment = Alignment.CenterHorizontally) {
-                        CarInfoCard(state, Modifier.weight(1f).fillMaxWidth())
+                        CarInfoCard(state, Modifier.weight(1f).fillMaxWidth(), actions)
                         MediaCard(state, actions, compact = false, modifier = Modifier.playerSize(boxW, boxH - gutter))
                         if (event != null) Card(Modifier.weight(0.8f).fillMaxWidth()) { CalendarCard(event, actions::navigateTo, Modifier.fillMaxSize()) }
                     }
@@ -630,7 +630,11 @@ internal fun Card(
             .clip(RoundedCornerShape(r))
             .let { if (background != null) it.background(background) else it.background(MaterialTheme.colorScheme.surfaceContainer) }
             .let { if (onClick != null) it.carFocusHighlight(RoundedCornerShape(r)).clickable(press, onClick = onClick) else it },
-    ) { content() }
+    ) {
+        // Text without its own color takes the card's: the CarPlay style's player showed the
+        // song title black on its dark card (2026-11-13).
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface) { content() }
+    }
 }
 
 @Composable

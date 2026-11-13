@@ -1110,7 +1110,8 @@ class CarRuntime(
             }
             CompositionLocalProvider(LocalCarDimens provides if (ui.gtsStyle) net.prototux.aare.ui.theme.GtsCarDimens else net.prototux.aare.ui.theme.TightCarDimens,
                 net.prototux.aare.ui.car.LocalMapCard provides mapCard, net.prototux.aare.ui.car.LocalVideoCard provides videoCard,
-                net.prototux.aare.ui.car.LocalCarMotion provides ui.motion) {
+                net.prototux.aare.ui.car.LocalCarMotion provides ui.motion,
+                net.prototux.aare.ui.car.LocalTripIcon provides { icon, owner -> icons.load(icon, 192, owner) }) {
                 CarShell(
                     state = ui,
                     actions = actions,

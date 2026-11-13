@@ -499,6 +499,8 @@
     <string name="gts_trip_heading">Heading</string>
     <string name="gts_agenda_empty">Nothing on the calendar for the next 60 days</string>
     <string name="gts_tomorrow">Tomorrow</string>
+    <string name="gts_turn_none">No route</string>
+    <string name="gts_turn_none_hint">Start one in Waze or Google Maps</string>
     <string-array name="gts_compass_points">
         <item>N</item>
         <item>NE</item>
@@ -586,5 +588,8 @@
     <string name="setup_choice_corner_card">Card beside the map</string>
     <string name="setup_corner_car">Car</string>
     <string name="setup_corner_clock">Clock, weather and agenda</string>
-    <string name="setup_hint_corner_card">Over the player. Car: speed, the readings of the OBD2 adapter or the drive by GPS. Clock: the time, the weather in full, the next event and holiday.</string>
+    <string name="setup_corner_turn">Next maneuver</string>
+    <string name="setup_corner_trip">Trip</string>
+    <string name="setup_corner_shortcuts">Shortcuts</string>
+    <string name="setup_hint_corner_card">Over the player. Car: speed, the readings of the OBD2 adapter or the drive by GPS. Clock: the time, the weather in full, the next event and holiday. Next maneuver: the arrow and distance of the next turn. Trip: speed, arrival and the drive in figures. Shortcuts: six apps a touch away.</string>
 </resources>
