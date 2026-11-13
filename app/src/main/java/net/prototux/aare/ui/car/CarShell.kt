@@ -787,9 +787,9 @@ private fun MediaCard(state: CarUiState, actions: CarActions, compact: Boolean, 
                 content()
                 Spacer(Modifier.height(12.dp))
                 if (np != null && np.durationMs > 0) {
-                    val progress = smoothProgress((np.positionMs.toFloat() / np.durationMs).coerceIn(0f, 1f), 1_000)
+                    val progress = (np.positionMs.toFloat() / np.durationMs).coerceIn(0f, 1f)
                     LinearProgressIndicator(
-                        progress = { progress.value },
+                        progress = { progress },
                         modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
                     )
                     Spacer(Modifier.height(12.dp))

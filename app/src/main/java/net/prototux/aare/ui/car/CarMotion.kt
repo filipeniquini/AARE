@@ -161,22 +161,6 @@ internal fun <T> CarCrossfade(target: T, key: (T) -> Any?, zoom: Boolean = false
     ) { content(it) }
 }
 
-/**
- * A progress (0..1) that glides between the player's updates instead of jumping, when animations
- * are full. A State, to be read where it is drawn: only the bar redraws, nothing recomposes. A big
- * change (a new song, a seek) jumps.
- */
-@Composable
-internal fun smoothProgress(target: Float, stepMs: Int): State<Float> {
-    val full = carMotionFull()
-    val a = remember { Animatable(target) }
-    LaunchedEffect(target, full) {
-        if (!full || abs(target - a.value) > 0.05f) a.snapTo(target)
-        else a.animateTo(target, tween(stepMs, easing = LinearEasing))
-    }
-    return a.asState()
-}
-
 /** A color change (the bar's highlight moving to the app just opened) that fades when animations are full. */
 @Composable
 internal fun carColor(target: Color): Color =

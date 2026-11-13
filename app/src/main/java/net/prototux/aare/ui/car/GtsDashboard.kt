@@ -455,13 +455,16 @@ private fun GtsMediaCard(state: CarUiState, actions: CarActions, modifier: Modif
                         while (true) { now = android.os.SystemClock.elapsedRealtime(); if (!np.playing) break; delay(500) }
                     }
                     val position = (np.positionMs + if (np.playing) (now - np.updatedAtMs).coerceAtLeast(0) else 0).coerceIn(0, np.durationMs)
-                    // Glides between the half-second ticks (full animations): only the bar redraws.
-                    val p = smoothProgress(position.toFloat() / np.durationMs, 500)
+                    // Steps every half second, never glides: on the car every redraw is a whole video frame
+                    // to encode and send, and a gliding bar made AARE redraw the car screen 60 times a
+                    // second while music played (2026-11-13: AARE 44 -> 94 % CPU) for a bar moving
+                    // under 2 pixels a second.
+                    val p = position.toFloat() / np.durationMs
                     val track = MaterialTheme.colorScheme.surfaceContainerHighest
                     val fill = MaterialTheme.colorScheme.primary
                     Canvas(Modifier.fillMaxWidth().height(s.dp(4f))) {
                         drawRoundRect(track, cornerRadius = CornerRadius(size.height / 2))
-                        drawRoundRect(fill, size = Size(size.width * p.value, size.height), cornerRadius = CornerRadius(size.height / 2))
+                        drawRoundRect(fill, size = Size(size.width * p, size.height), cornerRadius = CornerRadius(size.height / 2))
                     }
                     Row(Modifier.fillMaxWidth().padding(top = s.dp(2f)), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(clock(position), fontSize = s.sp(11f), color = MaterialTheme.colorScheme.onSurfaceVariant)
