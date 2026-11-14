@@ -1030,8 +1030,14 @@ class CarRuntime(
                 val paused = media.playback.value?.takeIf { it.playing }?.packageName
                 if (paused != null) media.pause()
                 host.assist()
-                kotlinx.coroutines.delay(ASSIST_CHECK_MS)
-                val now = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.topPackage() }
+                // Looked for a few times: a Google app just started (or restarting) takes longer than usual.
+                var now: String? = null
+                val until = android.os.SystemClock.elapsedRealtime() + ASSIST_CHECK_MS
+                while (android.os.SystemClock.elapsedRealtime() < until) {
+                    kotlinx.coroutines.delay(500)
+                    now = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { host.topPackage() }
+                    if (now == ASSISTANT_HOST) break
+                }
                 if (now == ASSISTANT_HOST) {
                     DiagLog.add("assistant: floating window on the car (${if (onApp != null) "over ${onApp.label}" else "map card"})" +
                         if (paused != null) ", $paused paused" else "")
@@ -1188,7 +1194,7 @@ class CarRuntime(
         /** The app whose activity is the assistant's floating window (Gemini's runs in the Google app). */
         private const val ASSISTANT_HOST = "com.google.android.googlequicksearchbox"
         /** How long the floating window takes to come up before falling back to the Gemini app. */
-        private const val ASSIST_CHECK_MS = 2_500L
+        private const val ASSIST_CHECK_MS = 5_000L
         /** The clock card's agenda: the next events it lists. */
         private const val AGENDA_EVENTS = 3
         /** How far ahead the clock card's agenda looks: the next event, even weeks away. */

@@ -114,10 +114,26 @@ class ShellDisplayService : IShellDisplay.Stub {
 
     override fun key(slot: Int, keyCode: Int) {
         val id = idOf(slot) ?: return
+        if (keyCode == KeyEvent.KEYCODE_ASSIST) focusDisplay(id)
         val t = SystemClock.uptimeMillis()
         for (action in intArrayOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
             inject(KeyEvent(t, t, action, keyCode, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0, InputDevice.SOURCE_KEYBOARD), id)
         }
+    }
+
+    /**
+     * Makes [displayId] the focused display: its top task gets the focus. The assistant's floating
+     * window opens on the focused display, whichever display the assist key names; with the phone
+     * awake and AARE's own screen on it, Gemini came up on the phone and the car fell back to the
+     * whole app (2026-11-14).
+     */
+    private fun focusDisplay(displayId: Int) {
+        val atm = taskManager() ?: return
+        runCatching {
+            val roots = HiddenApiBypass.invoke(atm.javaClass, atm, "getAllRootTaskInfosOnDisplay", displayId) as List<*>
+            val top = roots.firstNotNullOfOrNull { it as? android.app.TaskInfo } ?: return
+            HiddenApiBypass.invoke(atm.javaClass, atm, "setFocusedRootTask", top.taskId)
+        }.onFailure { Log.w(TAG, "can't focus display $displayId", it) }
     }
 
     override fun topPackage(slot: Int): String? {
