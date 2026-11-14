@@ -164,6 +164,7 @@ object PerfLog {
 
         private fun append(text: String) {
             runCatching { file.appendText(text) }
+            TripLog.perf(text)
         }
     }
 }

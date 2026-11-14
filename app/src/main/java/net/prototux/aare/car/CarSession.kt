@@ -165,6 +165,8 @@ class CarSession(
         private set
 
     fun start() {
+        // This trip's logs (a folder per trip, kept): logcat is read from a little before, so off the main thread.
+        Thread({ net.prototux.aare.TripLog.begin(context, transport.name) }, "aare-trip-begin").start()
         // The head unit is waiting for our version answer: start the protocol before the UI work.
         aap.start()
         runtime.microphone = { sink, stopped -> micRouter.open(sink, stopped) }
@@ -391,6 +393,7 @@ class CarSession(
     override fun onClosed(session: AapSession, reason: String, error: Throwable?) {
         val rejected = session.certificateRejected
         val refusal = session.pinRefusal
+        net.prototux.aare.TripLog.end(reason + (error?.let { ": ${it.message ?: it}" } ?: ""))
         main.post {
             teardown()
             listener.onEnded(this, reason, rejected, refusal)
