@@ -1,5 +1,75 @@
 # AARE
 
+## This branch: AARE for the VW Play
+
+This is my personal version of AARE, tuned and tested on one car: a **2023 VW Polo GTS** with the **VW Play** head unit (Visteon; it reports itself as `Visteon MIB Regio`, Android Auto protocol 1.5), software **0576** (16.03.22), hardware **H07**, part number **2GM035180A**, with a Pixel 7 Pro on Android 17 and Shizuku. Fixes that matter to everyone go to the official project as pull requests; this branch also has things that only make sense for me (the GTS-style car screen, OBD2 card, phone apps on the car screen…).
+
+**Other cars.** The VW Play was made by Visteon for Volkswagen's small cars (MQB A0) outside Europe, with the same 10.1" 1540x720 screen as mine:
+
+- **Brazil:** Polo, Virtus, Nivus, T-Cross, Taos, Tera and Tukan.
+- **Rest of Latin America** (Argentina, Colombia and others): Nivus, T-Cross, Polo and Virtus.
+- **India:** VW Taigun and Virtus, and as "Škoda Play" the Škoda Kushaq, Slavia and Kylaq (the 10" versions; some trims got an 8" unit, which is a different one).
+
+The unit was also certified for Russia, Mexico and North America, but I couldn't confirm a model sold there with it. Part numbers on the unit: 2GM035180…, 2GY035180A, 6JM035180….
+
+These cars are likely to behave like mine, but **I haven't tested any of them**, and the head unit's software changed over the years (versions 01xx to 08xx, a new look from 08xx), so a car on another version may behave differently. Mine is on the 05xx base from 2022, with the original look; I haven't tried 07xx or 08xx. To check yours: connect once and look at the connection log (Advanced): if the head unit line says `Visteon MIB Regio`, it's the same unit as mine. A report in an issue on the official project, with that log and your software version, helps everyone.
+
+Use at your own risk; it's not reviewed by the AARE maintainer. For most people, the official release is the right choice: https://github.com/prototux/AARE
+
+### What this branch adds
+
+Screenshots from the desktop head unit (`./headunit.sh`) at the car's 1280x720, during a simulated drive in Paris; personal details are blurred.
+
+**Home screen.** A map card that mirrors any phone navigation app (Google Maps here), a car card (speed, trip and heading by GPS, weather, and engine data from an OBD2 adapter when one is paired) and a 16:9 player that can show the video too.
+
+![Home screen: map, car card and the video in the player card](docs/vw-play/video-in-player-card.gif)
+
+**Video.** A media app's video full screen on the car while parked, with a small driver-side column (home, back, minimize) that slides in on touch.
+
+![A video full screen on the car](docs/vw-play/video-full-screen.gif)
+
+**The card over the player** can be the car, a clock with the weather and the agenda, the trip, shortcuts or the next turn:
+
+| Clock | Trip |
+|---|---|
+| ![Clock card](docs/vw-play/corner-clock.jpg) | ![Trip card](docs/vw-play/corner-trip.jpg) |
+| **Shortcuts** | **Next turn** |
+| ![Shortcuts card](docs/vw-play/corner-shortcuts.jpg) | ![Next turn card](docs/vw-play/corner-turn.jpg) |
+
+**The same cards in the other styles**, Android Auto and CarPlay:
+
+| Android Auto | CarPlay |
+|---|---|
+| ![Android Auto style](docs/vw-play/style-android-auto.jpg) | ![CarPlay style](docs/vw-play/style-carplay.jpg) |
+
+**Gemini's floating window on the car screen**, from the steering-wheel voice button, listening over the map, even with the phone locked:
+
+![Gemini on the car screen](docs/vw-play/gemini-on-car-screen.jpg)
+
+**Short animations** when switching screens (full, reduced or off):
+
+![Animations](docs/vw-play/animations.gif)
+
+### Em português
+
+Esta é a minha versão pessoal do AARE, ajustada e testada num **VW Polo GTS 2023** com a central **VW Play** (Visteon; no log ela aparece como `Visteon MIB Regio`, protocolo 1.5), software **0576** (16.03.22), hardware **H07**, peça **2GM035180A**, com um Pixel 7 Pro, Android 17 e Shizuku. As correções que servem para todos vão para o projeto oficial por PRs.
+
+A VW Play foi feita pela Visteon para os carros pequenos da Volkswagen (MQB A0) fora da Europa, com a mesma tela de 10,1" e 1540x720 do meu carro:
+
+- **Brasil:** Polo, Virtus, Nivus, T-Cross, Taos, Tera e Tukan.
+- **Resto da América Latina** (Argentina, Colômbia e outros): Nivus, T-Cross, Polo e Virtus.
+- **Índia:** VW Taigun e Virtus, e, com o nome "Škoda Play", os Škoda Kushaq, Slavia e Kylaq (as versões com tela de 10"; algumas versões vieram com uma tela de 8", que é outra central).
+
+A central também foi homologada para a Rússia, o México e a América do Norte, mas não consegui confirmar nenhum modelo vendido lá com ela. Códigos de peça na etiqueta: 2GM035180…, 2GY035180A, 6JM035180….
+
+Esses carros provavelmente se comportam como o meu, mas **eu não testei nenhum deles**, e o software da central mudou ao longo dos anos (versões 01xx a 08xx, com visual novo a partir da 08xx). Um carro com outra versão pode se comportar diferente. A minha está na base 05xx, de 2022, com o visual original; não testei as 07xx nem as 08xx. Para conferir o seu: conecte uma vez e veja o log de conexão (Avançado). Se a linha da central disser `Visteon MIB Regio`, é a mesma do meu carro. A versão do software fica na central, em engrenagem > Sistema > Informações do sistema. Um relato numa issue do projeto oficial, com o log e a versão, ajuda todo mundo.
+
+Use por sua conta e risco; esta versão não é revisada pelo dono do AARE. Para a maioria das pessoas, a versão oficial é a melhor escolha.
+
+As imagens acima mostram o que esta versão acrescenta: tela inicial com mapa, cartão do carro e player com vídeo, vídeo em tela cheia, os cartões do canto, os outros estilos, o Gemini na tela do carro e as animações.
+
+---
+
 [<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="54">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/prototux/AARE)
 
 AARE is an open-source reimplementation of the phone side of Android Auto. The phone talks the
