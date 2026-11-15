@@ -389,6 +389,9 @@
     <string name="phone_apps_size">Tamanho das aplicações no carro</string>
     <string name="phone_apps_size_hint">1 cabe mais coisa no ecrã, 8 deixa tudo maior. Tablet: o maior tamanho em que aplicações como o YouTube ainda usam o modo tablet. Vale na próxima vez que a aplicação aparecer.</string>
     <string name="phone_apps_size_tablet">Tablet</string>
+    <string name="phone_apps_size_phone">Celular</string>
+    <string name="phone_apps_size_general">Geral</string>
+    <string name="phone_apps_size_this_app">Tamanho: %1$s</string>
     <string name="video_minimize">Reduzir o vídeo para o cartão de multimédia</string>
     <string name="video_maximize">Mostrar o vídeo em ecrã inteiro</string>
     <string name="video_audio_only">Só o som</string>

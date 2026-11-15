@@ -370,7 +370,8 @@ class CarRuntime(
                 when (screen) {
                     "launcher" -> actions.openLauncher()
                     "map" -> actions.openMapFull()
-                    else -> ui.apps.firstOrNull { it.kind.name.equals(screen, ignoreCase = true) }?.let(actions::openApp)
+                    // A kind (phone, media...) or a package name.
+                    else -> ui.apps.firstOrNull { it.kind.name.equals(screen, ignoreCase = true) || it.packageName == screen }?.let(actions::openApp)
                 }
             }, 3_000)
         }

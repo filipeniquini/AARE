@@ -55,5 +55,14 @@ interface IShellDisplay {
     String moveCallsAway(int slot) = 11;
 
     /** Shizuku's user-service teardown call. */
+    /**
+     * Whether an app on the slot's display asked for the keyboard (the phone's own keyboard may
+     * not show there: with the phone locked Android keeps it hidden).
+     */
+    boolean imeShown(int slot) = 12;
+
+    /** Types [text] into what has the focus on the slot's display, as key presses. */
+    void typeText(int slot, String text) = 13;
+
     void destroy() = 16777114;
 }

@@ -136,6 +136,38 @@ class ShellDisplayService : IShellDisplay.Stub {
         }.onFailure { Log.w(TAG, "can't focus display $displayId", it) }
     }
 
+    override fun imeShown(slot: Int): Boolean {
+        val id = idOf(slot) ?: return false
+        val out = output("dumpsys", "input_method") ?: return false
+        // The phone's keyboard is kept off the display (DISPLAY_IME_POLICY_HIDE), so it's never
+        // shown there: the last show or hide an app on it asked for says whether it wants one.
+        // The system's own hides for that policy don't count (they come with every focus change).
+        val history = out.substringAfter("mImeTrackerService#History:", "")
+        var wanted = false
+        for (entry in history.split(Regex("""\n\s*#\d+ """)).drop(1)) {
+            if (!Regex("""displayId=$id\b""").containsMatchIn(entry)) continue
+            if (entry.contains("HIDE_DISPLAY_IME_POLICY_HIDE")) continue
+            when {
+                entry.startsWith("TYPE_SHOW") -> wanted = true
+                entry.startsWith("TYPE_HIDE") -> wanted = false
+            }
+        }
+        return wanted
+    }
+
+    override fun typeText(slot: Int, text: String?) {
+        val id = idOf(slot) ?: return
+        if (text.isNullOrEmpty()) return
+        val map = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD)
+        for (c in text) {
+            // Letters with accents (ç, ã, é) aren't keys: typed without the accent, which searches tolerate.
+            val plain = if (map.getEvents(charArrayOf(c)) != null) c.toString()
+                else java.text.Normalizer.normalize(c.toString(), java.text.Normalizer.Form.NFD).replace(Regex("""\p{M}+"""), "")
+            val events = map.getEvents(plain.toCharArray()) ?: continue
+            for (e in events) inject(KeyEvent.changeTimeRepeat(e, SystemClock.uptimeMillis(), 0), id)
+        }
+    }
+
     override fun topPackage(slot: Int): String? {
         val id = idOf(slot) ?: return null
         // "Display #<id>" then its activities, top first: the first record names the package.
@@ -291,7 +323,7 @@ class ShellDisplayService : IShellDisplay.Stub {
             val binder = HiddenApiBypass.invoke(Class.forName("android.os.ServiceManager"), null, "getService", "window")
             val stub = Class.forName("android.view.IWindowManager\$Stub")
             val wm = HiddenApiBypass.invoke(stub, null, "asInterface", binder)!!
-            HiddenApiBypass.invoke(wm.javaClass, wm, "setDisplayImePolicy", displayId, 0 /* DISPLAY_IME_POLICY_LOCAL */)
+            HiddenApiBypass.invoke(wm.javaClass, wm, "setDisplayImePolicy", displayId, 2 /* DISPLAY_IME_POLICY_HIDE: AARE's own keyboard types there (2026-11-15) */)
         } catch (e: Exception) {
             Log.w(TAG, "can't keep the keyboard on the display", e)
         }

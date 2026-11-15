@@ -283,6 +283,26 @@ class Settings(context: Context) {
         set(v) = prefs.edit { putInt("phone_apps_dpi", v) }
 
     /**
+     * Sizes chosen app by app ("package=dpi"), over [phoneAppsDpi]: [PHONE_APPS_DPI_PHONE],
+     * [PHONE_APPS_DPI_TABLET], a density, or [PHONE_APPS_DPI_GENERAL] (the general size, chosen).
+     */
+    var phoneAppDpis: Map<String, Int>
+        get() = (prefs.getStringSet("phone_app_dpis", emptySet()) ?: emptySet()).mapNotNull { e ->
+            val i = e.lastIndexOf('=')
+            val d = if (i > 0) e.substring(i + 1).toIntOrNull() else null
+            if (d == null) null else e.substring(0, i) to d
+        }.toMap()
+        set(v) = prefs.edit { putStringSet("phone_app_dpis", v.map { (k, d) -> "$k=$d" }.toSet()) }
+
+    /** What [packageName] is set to on its own (an app default when untouched), or [PHONE_APPS_DPI_GENERAL]. */
+    fun phoneAppDpiChoice(packageName: String): Int = phoneAppDpis[packageName] ?: APP_DPI_DEFAULTS[packageName] ?: PHONE_APPS_DPI_GENERAL
+
+    /** The size [packageName] opens at on the car: its own, or the general one. */
+    fun phoneAppDpi(packageName: String): Int = phoneAppDpiChoice(packageName).let { if (it == PHONE_APPS_DPI_GENERAL) phoneAppsDpi else it }
+
+    fun setPhoneAppDpi(packageName: String, dpi: Int) { phoneAppDpis = phoneAppDpis + (packageName to dpi) }
+
+    /**
      * The phone app shown live in the GTS home screen's big card (a package), or "" for the car
      * navigation app (CoMaps…). Google Maps by default.
      */
@@ -492,6 +512,15 @@ class Settings(context: Context) {
         val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
         /** [phoneAppsDpi] value for "tablet": the largest size at which apps still lay out as on a tablet (see PhoneApps.tabletDpi). */
         const val PHONE_APPS_DPI_TABLET = 0
+        /** An app's size: the biggest at which it still lays out as on a phone (see PhoneApps.phoneDpi). */
+        const val PHONE_APPS_DPI_PHONE = -1
+        /** An app's size: the general one ([phoneAppsDpi]). */
+        const val PHONE_APPS_DPI_GENERAL = -2
+        /**
+         * Apps' own sizes until the user picks one: YouTube as on a phone, its tablet layout was a
+         * nuisance on the car (2026-11-15).
+         */
+        val APP_DPI_DEFAULTS = mapOf("com.google.android.youtube" to PHONE_APPS_DPI_PHONE)
         /** In [barApps]: whichever media app is in use. */
         const val BAR_MEDIA = "@media"
         /** In [barApps]: whichever navigation app is in use. */

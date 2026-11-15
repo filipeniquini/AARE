@@ -1170,6 +1170,10 @@ private fun PhoneAppsSection(settings: Settings, l: LauncherLists) {
                     shown = if (on) shown + pkg else shown - pkg
                     settings.phoneAppsShown = shown
                 }
+                // Its own size, for the apps the car shows (ticked, or video apps, shown anyway).
+                if (pkg in shown || net.prototux.aare.apps.PhoneApps.kind(pkg, app.category) == net.prototux.aare.apps.PhoneApps.Kind.VIDEO) {
+                    AppSizeChoice(settings, pkg)
+                }
             }
     }
 }
@@ -1400,6 +1404,31 @@ private fun AppRow(icon: android.graphics.Bitmap?, label: String, kind: String, 
             Text(kind, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = visible, onCheckedChange = onVisible)
+    }
+}
+
+/** One phone app's size on the car: the general one, as a phone, as a tablet, or 1 to 8. */
+@Composable
+private fun AppSizeChoice(settings: Settings, pkg: String) {
+    var choice by remember(pkg) { mutableStateOf(settings.phoneAppDpiChoice(pkg)) }
+    var open by remember { mutableStateOf(false) }
+    val options = listOf(
+        Settings.PHONE_APPS_DPI_GENERAL to stringResource(R.string.phone_apps_size_general),
+        Settings.PHONE_APPS_DPI_PHONE to stringResource(R.string.phone_apps_size_phone),
+        Settings.PHONE_APPS_DPI_TABLET to stringResource(R.string.phone_apps_size_tablet),
+    ) + Settings.PHONE_APP_DPIS.mapIndexed { i, d -> d to "${i + 1}" }
+    Box(Modifier.padding(start = 52.dp, bottom = 6.dp)) {
+        androidx.compose.material3.AssistChip(
+            onClick = { open = true },
+            label = { Text(stringResource(R.string.phone_apps_size_this_app, options.firstOrNull { it.first == choice }?.second ?: "$choice")) },
+        )
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { (value, label) ->
+                androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = {
+                    choice = value; settings.setPhoneAppDpi(pkg, value); open = false
+                })
+            }
+        }
     }
 }
 

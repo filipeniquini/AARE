@@ -531,6 +531,9 @@
     <string name="phone_apps_size">Size of the apps on the car</string>
     <string name="phone_apps_size_hint">1 fits more on the screen, 8 makes everything bigger. Tablet: the biggest size at which apps like YouTube still use their tablet layout. Applies the next time an app is shown.</string>
     <string name="phone_apps_size_tablet">Tablet</string>
+    <string name="phone_apps_size_phone">Phone</string>
+    <string name="phone_apps_size_general">General</string>
+    <string name="phone_apps_size_this_app">Size: %1$s</string>
     <string name="video_minimize">Shrink the video into the media card</string>
     <string name="video_maximize">Show the video full screen</string>
     <string name="video_audio_only">Sound only</string>
