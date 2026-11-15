@@ -54,8 +54,14 @@ object PhoneApps {
     fun phoneDpi(width: Int, height: Int): Int = ((minOf(width, height) * 160 + PHONE_SW_DP - 1) / PHONE_SW_DP).coerceIn(100, 480)
     private const val PHONE_SW_DP = 580
 
-    /** Whether [dpi] lays a [width] x [height] display out as a phone, near [phoneDpi]'s size. */
-    fun isPhoneSize(width: Int, height: Int, dpi: Int): Boolean = minOf(width, height) * 160 / dpi in 520 until TABLET_SW_DP
+    /**
+     * Whether [dpi] still suits a [width] x [height] display as the phone size, near [phoneDpi]'s.
+     * Up to 700 dp, not 600: a video going full screen hides the bar and makes the display ~12 %
+     * taller, and a new density there recreated the display, which threw YouTube out of full
+     * screen, and back again (2026-11-15).
+     */
+    fun isPhoneSize(width: Int, height: Int, dpi: Int): Boolean = minOf(width, height) * 160 / dpi in 520 until PHONE_KEEP_SW_DP
+    private const val PHONE_KEEP_SW_DP = 700
 
     /** Apps opened full screen from the car's grid. */
     val full = PhoneAppHost("apps", 0)

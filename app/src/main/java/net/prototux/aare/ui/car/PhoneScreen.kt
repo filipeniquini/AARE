@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -62,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +74,7 @@ import net.prototux.aare.R
 import net.prototux.aare.car.Calls
 import net.prototux.aare.host.CarRuntime
 import net.prototux.aare.media.Placeholder
+import net.prototux.aare.ui.theme.LocalCarColors
 import net.prototux.aare.ui.theme.LocalCarDimens
 
 /** One number to call: a recent call or a contact. */
@@ -194,8 +195,8 @@ private fun FullCall(call: CarCall?, modifier: Modifier, onHangUp: () -> Unit) {
                 MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.headlineMedium)
         }
         Spacer(Modifier.width(36.dp))
-        if (Calls.canEnd) Box(Modifier.size(120.dp).clip(CircleShape).background(Color(0xFFD32F2F)).clickable(onClick = onHangUp), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.CallEnd, stringResource(R.string.phone_action_hang_up), tint = Color.White, modifier = Modifier.size(56.dp))
+        if (Calls.canEnd) Box(Modifier.size(120.dp).clip(CircleShape).background(LocalCarColors.current.decline).clickable(onClick = onHangUp), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.CallEnd, stringResource(R.string.phone_action_hang_up), tint = LocalCarColors.current.onCall, modifier = Modifier.size(56.dp))
         }
     }
 }
@@ -317,9 +318,9 @@ private fun Keypad(onCall: (String) -> Unit) {
                 Box(Modifier.size(LocalCarDimens.current.touchTarget).clip(CircleShape).clickable { number = number.dropLast(1) }, contentAlignment = Alignment.Center) {
                     Icon(Icons.AutoMirrored.Rounded.Backspace, stringResource(R.string.phone_keypad_delete))
                 }
-                Box(Modifier.size(LocalCarDimens.current.touchTarget + 8.dp).clip(CircleShape).background(Color(0xFF2E7D32))
+                Box(Modifier.size(LocalCarDimens.current.touchTarget + 8.dp).clip(CircleShape).background(LocalCarColors.current.accept)
                     .clickable(enabled = number.isNotEmpty()) { onCall(number) }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Call, stringResource(R.string.common_call), tint = Color.White)
+                    Icon(Icons.Rounded.Call, stringResource(R.string.common_call), tint = LocalCarColors.current.onCall)
                 }
             }
         }
@@ -327,7 +328,7 @@ private fun Keypad(onCall: (String) -> Unit) {
             keys.chunked(3).forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { k ->
-                        Box(Modifier.weight(1f).height(64.dp).clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        Box(Modifier.weight(1f).height(64.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHigh)
                             .clickable { if (number.length < 20) number += k }, contentAlignment = Alignment.Center) {
                             Text(k, style = MaterialTheme.typography.headlineSmall)
                         }

@@ -42,7 +42,8 @@ internal fun AccentText(
     overflow: TextOverflow = TextOverflow.Clip,
     backdrop: Boolean = true,
 ) {
-    if (color.luminance() >= DARK_ACCENT) {
+    // On a light theme (1.5.0's day colours) a dark accent already stands out from its background.
+    if (color.luminance() >= DARK_ACCENT || androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
         Text(text, modifier, color = color, fontSize = fontSize, fontWeight = fontWeight, maxLines = maxLines, overflow = overflow, style = style)
         return
     }
