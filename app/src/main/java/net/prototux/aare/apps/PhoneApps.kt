@@ -47,6 +47,22 @@ object PhoneApps {
     fun tabletDpi(width: Int, height: Int): Int = (minOf(width, height) * 160 / TABLET_SW_DP).coerceIn(100, 320)
     private const val TABLET_SW_DP = 600
 
+    /**
+     * The biggest size (lowest density) at which apps still lay out as on a phone: just under
+     * the tablet width ([PHONE_SW_DP]).
+     */
+    fun phoneDpi(width: Int, height: Int): Int = ((minOf(width, height) * 160 + PHONE_SW_DP - 1) / PHONE_SW_DP).coerceIn(100, 480)
+    private const val PHONE_SW_DP = 580
+
+    /**
+     * Whether [dpi] still suits a [width] x [height] display as the phone size, near [phoneDpi]'s.
+     * Up to 700 dp, not 600: a video going full screen hides the bar and makes the display ~12 %
+     * taller, and a new density there recreated the display, which threw YouTube out of full
+     * screen, and back again (2026-11-15).
+     */
+    fun isPhoneSize(width: Int, height: Int, dpi: Int): Boolean = minOf(width, height) * 160 / dpi in 520 until PHONE_KEEP_SW_DP
+    private const val PHONE_KEEP_SW_DP = 700
+
     /** Apps opened full screen from the car's grid. */
     val full = PhoneAppHost("apps", 0)
 
@@ -247,6 +263,15 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
     }
 
     fun back() = worker.execute { runCatching { service?.key(slot, android.view.KeyEvent.KEYCODE_BACK) } }
+
+    /** A key (delete, enter...) pressed on this display. */
+    fun key(keyCode: Int) = worker.execute { runCatching { service?.key(slot, keyCode) } }
+
+    /** Text typed into what has the focus on this display. */
+    fun type(text: String) = worker.execute { runCatching { service?.typeText(slot, text) } }
+
+    /** Whether an app here asked for the keyboard (blocking: off the main thread). */
+    fun imeShown(): Boolean = runCatching { service?.imeShown(slot) }.getOrNull() == true
 
     /**
      * The assist key, pressed on this display: the phone's assistant opens its small window (Gemini's

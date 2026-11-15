@@ -1,16 +1,19 @@
 package net.prototux.aare.ui.theme
 
+import androidx.annotation.StringRes
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -21,10 +24,8 @@ import androidx.compose.ui.unit.sp
 import net.prototux.aare.R
 
 /**
- * The in-car look: calm dark surfaces, one warm accent, big type and big targets.
- *
- * Car screens are viewed from ~70 cm at a glance, so sizes follow the car-UI rule of thumb:
- * touch targets ≥ 76 dp, body text ≥ 24 sp, and no more than two text styles per card.
+ * Car-screen sizes. Car screens are viewed from ~70 cm at a glance, so sizes follow the car-UI rule
+ * of thumb: touch targets ≥ 76 dp, body text ≥ 24 sp, and no more than two text styles per card.
  */
 @Immutable
 data class CarDimens(
@@ -38,158 +39,125 @@ data class CarDimens(
     val railIcon: Dp = 36.dp,
 )
 
-/** The GTS style's slimmer bottom bar, as the user asked (2026-11-08): about 9 mm buttons on the VW Play. */
-/** Its cards sit closer together too (2026-11-11: the gaps wasted screen the player could use). */
-val GtsCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp, gutter = 6.dp)
-
 /**
- * The other styles with the same closer cards (2026-11-12) and, since 2026-11-13, the GTS bar's
- * slimmer size too: Google's 96 dp bar took a big share of the VW Play's short screen.
+ * Every theme with the GTS style's slimmer bar (about 9 mm buttons on the VW Play, 2026-11-08) and
+ * closer cards (2026-11-11/12): Google's 96 dp bar took a big share of the VW Play's short screen.
+ * The theme keeps its own corners and icons.
  */
-val TightCarDimens = CarDimens(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp, gutter = 6.dp)
+fun CarDimens.tight(): CarDimens = copy(railWidth = 72.dp, railButton = 60.dp, railIcon = 30.dp, gutter = 6.dp)
 
 val LocalCarDimens = staticCompositionLocalOf { CarDimens() }
 
-/** Brand accent: a river teal (the Aare is famously turquoise). */
-private val Teal = Color(0xFF3DDBC6)
-private val TealDeep = Color(0xFF00695C)
-
-private val NightColors: ColorScheme = darkColorScheme(
-    primary = Teal,
-    onPrimary = Color(0xFF00201C),
-    primaryContainer = Color(0xFF0E3B36),
-    onPrimaryContainer = Color(0xFFB9F5EA),
-    secondary = Color(0xFFB4CAC5),
-    onSecondary = Color(0xFF1F3531),
-    secondaryContainer = Color(0xFF263330),
-    onSecondaryContainer = Color(0xFFD0E6E1),
-    tertiary = Color(0xFFFFB86B),
-    onTertiary = Color(0xFF2E1500),
-    background = Color(0xFF0B0F0F),
-    onBackground = Color(0xFFE3E9E7),
-    surface = Color(0xFF0B0F0F),
-    onSurface = Color(0xFFE3E9E7),
-    surfaceVariant = Color(0xFF1A2120),
-    onSurfaceVariant = Color(0xFFAFBAB7),
-    surfaceContainerLowest = Color(0xFF060909),
-    surfaceContainerLow = Color(0xFF121818),
-    surfaceContainer = Color(0xFF161D1C),
-    surfaceContainerHigh = Color(0xFF1D2524),
-    surfaceContainerHighest = Color(0xFF26302E),
-    outline = Color(0xFF5E6B68),
-    outlineVariant = Color(0xFF2E3836),
-    error = Color(0xFFFF8A80),
+/** The colours a theme needs that Material's [ColorScheme] has no slot for, for one of day or night. */
+@Immutable
+data class CarColors(
+    /** Answering a call. */
+    val accept: Color,
+    /** Declining or hanging up a call. */
+    val decline: Color,
+    /** Icons and text on [accept] and [decline]. */
+    val onCall: Color,
+    /** CarColor's standard colours, which apps use for status text, icons and buttons. */
+    val red: Color,
+    val green: Color,
+    val blue: Color,
+    val yellow: Color,
+    /** Text on a light background an app supplied (white text goes on dark ones). */
+    val inkOnLight: Color,
 )
 
-private val DayColors: ColorScheme = lightColorScheme(
-    primary = TealDeep,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFB9F5EA),
-    onPrimaryContainer = Color(0xFF00201C),
-    secondary = Color(0xFF4A635F),
-    secondaryContainer = Color(0xFFCCE8E2),
-    onSecondaryContainer = Color(0xFF06201C),
-    tertiary = Color(0xFF8B5000),
-    background = Color(0xFFF3F7F6),
-    onBackground = Color(0xFF161D1C),
-    surface = Color(0xFFF3F7F6),
-    onSurface = Color(0xFF161D1C),
-    surfaceVariant = Color(0xFFDAE5E2),
-    onSurfaceVariant = Color(0xFF3F4947),
-    surfaceContainerLowest = Color.White,
-    surfaceContainerLow = Color(0xFFECF2F0),
-    surfaceContainer = Color(0xFFE6ECEA),
-    surfaceContainerHigh = Color(0xFFE0E7E5),
-    surfaceContainerHighest = Color(0xFFD9E1DF),
-    outline = Color(0xFF6F7977),
-    outlineVariant = Color(0xFFBEC9C6),
-)
+val LocalCarColors = staticCompositionLocalOf { AareTheme.nightColors }
 
-/** The GTS style by day (its only look until 2026-11-08): graphite surfaces and one red accent, like the car's own instruments. */
-private val GtsColors: ColorScheme = darkColorScheme(
-    primary = Color(0xFFE4002B),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF4A0A18),
-    onPrimaryContainer = Color(0xFFFFD9DD),
-    secondary = Color(0xFFB8BCC4),
-    onSecondary = Color(0xFF1E2026),
-    secondaryContainer = Color(0xFF262930),
-    onSecondaryContainer = Color(0xFFE6E7EB),
-    tertiary = Color(0xFFFFB86B),
-    onTertiary = Color(0xFF2E1500),
-    background = Color(0xFF0C0D10),
-    onBackground = Color(0xFFF0F1F3),
-    surface = Color(0xFF0C0D10),
-    onSurface = Color(0xFFF0F1F3),
-    surfaceVariant = Color(0xFF1C1E24),
-    onSurfaceVariant = Color(0xFFA8ADB6),
-    surfaceContainerLowest = Color(0xFF07080A),
-    surfaceContainerLow = Color(0xFF121318),
-    surfaceContainer = Color(0xFF16181D),
-    surfaceContainerHigh = Color(0xFF1C1E24),
-    surfaceContainerHighest = Color(0xFF262930),
-    outline = Color(0xFF50545C),
-    outlineVariant = Color(0xFF2A2D34),
-    error = Color(0xFFFF8A80),
+/**
+ * A car-screen theme: what things look like (colours, type, shapes, sizes), not where they go;
+ * that is the layout's job (see `CarLayout`). Every value is plain data, so a theme could later be
+ * read from a file; for now a new theme is a new entry in [CarThemes].
+ */
+@Immutable
+data class CarThemeSpec(
+    /** Stored in the settings: never change it once released. */
+    val id: String,
+    /** Shown in the settings: a name like "AARE" or "CarPlay", or [nameRes] if set (a word to translate). */
+    val name: String,
+    @StringRes val nameRes: Int = 0,
+    val day: ColorScheme,
+    val night: ColorScheme,
+    val dayColors: CarColors,
+    val nightColors: CarColors,
+    val typography: Typography,
+    val shapes: Shapes,
+    /** App icons: round on Android, rounded squares on iOS. */
+    val appIcon: Shape = CircleShape,
+    val dimens: CarDimens = CarDimens(),
+    /**
+     * The colours are the phone's own (Material You, Android 12 and later), set by [forPhone]; [day]
+     * and [night] are only the stand-in for older phones.
+     */
+    val phoneColors: Boolean = false,
+    /**
+     * A single-colour theme: everything in one accent colour, by default the accent with this id
+     * (`CarAccents`), or the one the settings pick. [day] and [night] are then rebuilt by `tinted`.
+     */
+    val singleColor: String? = null,
+    /** An outline around the dashboard cards, in the outline colour (0: none). */
+    val cardBorder: Dp = 0.dp,
+    /** A phosphor-like halo around text, in the accent colour (single-colour themes). */
+    val glow: Boolean = false,
+    /** App icons drawn in the accent colour instead of their own (single-colour themes). */
+    val tintIcons: Boolean = false,
+    /** The clock on a seven-segment display ([SegmentFont]), its unlit segments faintly behind. */
+    val segmentClock: Boolean = false,
 )
 
 /**
- * The GTS style at night: absolute black (the car screen's own black, nothing glows), cards in
- * near-black and the same red.
+ * DSEG7 Classic, a seven-segment display font (SIL Open Font License 1.1, bundled with its licence
+ * in assets/licenses). Digits and a few capitals only: for the clock, never for running text.
+ * Its "!" is a blank as wide as a digit, to line up with the unlit "88:88".
  */
-private val GtsNightColors: ColorScheme = darkColorScheme(
-    primary = Color(0xFFE4002B),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF3A0812),
-    onPrimaryContainer = Color(0xFFFFD9DD),
-    secondary = Color(0xFFA8ADB6),
-    onSecondary = Color(0xFF16181C),
-    secondaryContainer = Color(0xFF16171A),
-    onSecondaryContainer = Color(0xFFE0E1E5),
-    tertiary = Color(0xFFFFB86B),
-    onTertiary = Color(0xFF2E1500),
-    background = Color.Black,
-    onBackground = Color(0xFFE6E7EA),
-    surface = Color.Black,
-    onSurface = Color(0xFFE6E7EA),
-    surfaceVariant = Color(0xFF111214),
-    onSurfaceVariant = Color(0xFF9A9FA8),
-    surfaceContainerLowest = Color.Black,
-    surfaceContainerLow = Color(0xFF060607),
-    surfaceContainer = Color(0xFF0A0A0C),
-    surfaceContainerHigh = Color(0xFF111214),
-    surfaceContainerHighest = Color(0xFF1A1B1E),
-    outline = Color(0xFF3E4148),
-    outlineVariant = Color(0xFF1C1D20),
-    error = Color(0xFFFF8A80),
-)
+val SegmentFont = FontFamily(Font(R.font.dseg7_classic_regular))
 
-/** Barlow Semi Condensed (SIL OFL, see assets/fonts/OFL-Barlow.txt). The files are italic already. */
-private val Barlow = FontFamily(
-    Font(R.font.barlow_semi_condensed_medium_italic, FontWeight.Normal),
-    Font(R.font.barlow_semi_condensed_medium_italic, FontWeight.Medium),
-    Font(R.font.barlow_semi_condensed_bold_italic, FontWeight.Bold),
-)
+/** [CarThemeSpec.name], translated when the name is a word. */
+@Composable
+fun CarThemeSpec.label(): String = if (nameRes != 0) stringResource(nameRes) else name
 
-private fun Typography.withFamily(family: FontFamily) = Typography(
-    displayLarge = displayLarge.copy(fontFamily = family),
-    displayMedium = displayMedium.copy(fontFamily = family),
-    displaySmall = displaySmall.copy(fontFamily = family),
-    headlineLarge = headlineLarge.copy(fontFamily = family),
-    headlineMedium = headlineMedium.copy(fontFamily = family),
-    headlineSmall = headlineSmall.copy(fontFamily = family),
-    titleLarge = titleLarge.copy(fontFamily = family),
-    titleMedium = titleMedium.copy(fontFamily = family),
-    titleSmall = titleSmall.copy(fontFamily = family),
-    bodyLarge = bodyLarge.copy(fontFamily = family),
-    bodyMedium = bodyMedium.copy(fontFamily = family),
-    bodySmall = bodySmall.copy(fontFamily = family),
-    labelLarge = labelLarge.copy(fontFamily = family),
-    labelMedium = labelMedium.copy(fontFamily = family),
-    labelSmall = labelSmall.copy(fontFamily = family),
-)
+val LocalCarTheme = staticCompositionLocalOf { AareTheme }
 
-private val CarType = Typography(
+/** Whether the car screen uses the GTS theme (its own home screen layout, GtsDashboard). */
+val LocalGtsStyle = staticCompositionLocalOf { false }
+
+/** Whether the car screen is in its night colors (the GTS day and night are both dark). */
+val LocalCarNight = staticCompositionLocalOf { true }
+
+/**
+ * Applies [theme] in its day or night colours. [theme] defaults to the one already applied, so a
+ * part of the screen can switch to night colours (the "dark bar") without knowing which theme it is.
+ */
+@Composable
+fun CarTheme(night: Boolean, theme: CarThemeSpec = LocalCarTheme.current, content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = if (night) theme.night else theme.day,
+        typography = theme.typography,
+        shapes = theme.shapes,
+    ) {
+        CompositionLocalProvider(
+            LocalCarTheme provides theme,
+            LocalCarColors provides if (night) theme.nightColors else theme.dayColors,
+            LocalCarDimens provides theme.dimens.tight(),
+            LocalGtsStyle provides (theme.id == GTS_THEME_ID),
+            LocalCarNight provides night,
+            content = content,
+        )
+    }
+}
+
+/** Phone UI theme: AARE's palette, normal phone type scale. */
+@Composable
+fun PhoneTheme(dark: Boolean, content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = if (dark) AareTheme.night else AareTheme.day, content = content)
+}
+
+/** The car type scale every theme starts from: big enough to read at a glance. */
+internal val CarTypography = Typography(
     displaySmall = TextStyle(fontSize = 44.sp, lineHeight = 52.sp, fontWeight = FontWeight.Medium),
     headlineMedium = TextStyle(fontSize = 32.sp, lineHeight = 40.sp, fontWeight = FontWeight.Medium),
     headlineSmall = TextStyle(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Medium),
@@ -201,34 +169,14 @@ private val CarType = Typography(
     labelMedium = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium),
 )
 
-private val GtsType = CarType.withFamily(Barlow)
-
-private val CarShapes = Shapes(
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(20.dp),
+/**
+ * AARE's corners. The car UI uses the scale by role: small for album art, thumbnails and keys,
+ * medium for buttons and list rows, large for cards and banners, extraLarge for chips and sheets.
+ */
+internal val CarShapes = Shapes(
+    extraSmall = RoundedCornerShape(4.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(24.dp),
     large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp),
+    extraLarge = RoundedCornerShape(32.dp),
 )
-
-/** Whether the car screen uses the GTS style (its own home screen layout). */
-val LocalGtsStyle = staticCompositionLocalOf { false }
-
-/** Whether the car screen is in its night colors (the GTS day and night are both dark). */
-val LocalCarNight = staticCompositionLocalOf { true }
-
-@Composable
-fun CarTheme(night: Boolean, gts: Boolean = false, content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (gts) (if (night) GtsNightColors else GtsColors) else if (night) NightColors else DayColors,
-        typography = if (gts) GtsType else CarType,
-        shapes = CarShapes,
-    ) {
-        androidx.compose.runtime.CompositionLocalProvider(LocalGtsStyle provides gts, LocalCarNight provides night, content = content)
-    }
-}
-
-/** Phone UI theme: same palette, normal phone type scale. */
-@Composable
-fun PhoneTheme(dark: Boolean, content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (dark) NightColors else DayColors, content = content)
-}

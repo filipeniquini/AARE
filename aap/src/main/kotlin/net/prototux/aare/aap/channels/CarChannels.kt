@@ -106,9 +106,9 @@ class SensorChannel(service: Service, private val listener: Listener) : ServiceC
 /**
  * Turn-by-turn for the instrument cluster / head-unit widgets. Head units on protocol 1.6 and up
  * read NavigationState + CurrentPosition; older ones only the (deprecated) turn and distance
- * events, and answer the newer messages with "unexpected message". Android Auto sends one set or
- * the other by the head unit's version, never both: the VW Play (1.5) got two refused messages
- * on every update when we sent both (2026-11-08 drive).
+ * events, and answer the newer messages with "unexpected message" (0xff). Android Auto sends one
+ * set or the other by the head unit's version, never both: a VW Play (protocol 1.5) answered two
+ * refused messages on every update when it got both.
  */
 class NavigationStatusChannel(service: Service) : ServiceChannel(service, "navstatus") {
     /** An unknown cluster type reads back as the default (IMAGE): only trust one the car set. */
@@ -137,17 +137,17 @@ class NavigationStatusChannel(service: Service) : ServiceChannel(service, "navst
         }
     }
 
-    /** The head unit reads NavigationState/CurrentPosition (protocol 1.6+), not the old events. */
-    private val modern: Boolean get() = session.headUnitAtLeast(1, 6)
-
     fun status(s: NavigationStatus.NavigationStatusEnum) = synchronized(lock) {
-        // Older head units don't know REROUTING (Android Auto leaves it out for them too).
-        if (s == NavigationStatus.NavigationStatusEnum.REROUTING && !modern) return@synchronized
         // A step held back for the rate limit must not light the cluster up again after navigation
         // ended, nor show the abandoned route's maneuver while rerouting.
         if (s != NavigationStatus.NavigationStatusEnum.ACTIVE) pending = null
+        // Older head units don't know REROUTING; Android Auto leaves it out for them too.
+        if (s == NavigationStatus.NavigationStatusEnum.REROUTING && !modern) return@synchronized
         send(NavStatusMsg.STATUS, NavigationStatus.newBuilder().setStatus(s).build(), Priority.INPUT)
     }
+
+    /** The head unit reads NavigationState and CurrentPosition (protocol 1.6+), not the old events. */
+    private val modern: Boolean get() = session.headUnitAtLeast(1, 6)
 
     /**
      * Sends the current step, rate-limited to what the head unit asked for. A step inside the
@@ -195,12 +195,30 @@ class NavigationStatusChannel(service: Service) : ServiceChannel(service, "navst
     private fun now() = System.nanoTime() / 1_000_000
 }
 
+/**
+ * A service AARE has nothing to say on, opened because the head unit expects it open (a
+ * vehicles.json `openServices` quirk). Whatever the car sends on it is ignored.
+ */
+class PassiveChannel(service: Service, name: String) : ServiceChannel(service, name) {
+    override fun onMessage(msg: AapMessage) = Unit
+}
+
 /** Now-playing info for the head unit's own widgets and cluster. */
 class MediaPlaybackChannel(service: Service) : ServiceChannel(service, "playback") {
     override fun onMessage(msg: AapMessage) = Unit
 
     fun status(s: MediaPlaybackStatus) = send(MediaPlaybackMsg.STATUS, s, Priority.INPUT)
     fun metadata(m: MediaPlaybackMetadata) = send(MediaPlaybackMsg.METADATA, m, Priority.AUDIO)
+}
+
+/**
+ * Wi-Fi projection: listed by head units that offer wireless Android Auto, with their access
+ * point's BSSID. Android Auto opens it whenever a head unit lists it, over USB too, so the car sees
+ * the channels it was built against. AARE joins the car's Wi-Fi through the Bluetooth bootstrap
+ * instead and has nothing to say on it, so it is only opened, and what the car sends is ignored.
+ */
+class WifiProjectionChannel(service: Service) : ServiceChannel(service, "wifi") {
+    override fun onMessage(msg: AapMessage) = Unit
 }
 
 /**

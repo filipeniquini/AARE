@@ -101,16 +101,54 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("force_h264", false)
         set(v) = prefs.edit { putBoolean("force_h264", v) }
 
+    /**
+     * Encode the car screen at a constant bitrate (VideoEncoder.constantBitrate): for head units
+     * that drop the link when the whole picture changes, as with the phone screen. Off: variable.
+     */
+    var constantBitrateVideo: Boolean
+        get() = prefs.getBoolean("constant_bitrate_video", false)
+        set(v) = prefs.edit { putBoolean("constant_bitrate_video", v) }
+
+    /**
+     * Put calls on the phone's loudspeaker and microphone while connected to a car (CallSpeaker),
+     * for setups whose hands-free microphone doesn't work. Off: calls go where Android routes them.
+     */
+    var callsOnPhoneSpeaker: Boolean
+        get() = prefs.getBoolean("calls_on_phone_speaker", false)
+        set(v) = prefs.edit { putBoolean("calls_on_phone_speaker", v) }
+
     /** Where the car screen's bar goes: next to the driver ([RAIL_AUTO]), [RAIL_LEFT], [RAIL_RIGHT] or [RAIL_BOTTOM]. */
     var railPosition: String
         get() = prefs.getString("rail_position", null)
             ?: if (prefs.contains("rail_right")) (if (prefs.getBoolean("rail_right", false)) RAIL_RIGHT else RAIL_LEFT) else RAIL_AUTO
         set(v) = prefs.edit { putString("rail_position", v); remove("rail_right") }
 
-    /** The car screen's layout: [STYLE_AUTO] (Android Auto's) or [STYLE_CARPLAY] (an easter egg). */
-    var carStyle: String
-        get() = prefs.getString("car_style", STYLE_AUTO) ?: STYLE_AUTO
-        set(v) = prefs.edit { putString("car_style", v) }
+    /**
+     * The car screen's theme, an id from `CarThemes`. Before themes, the only choice was the style
+     * ("car_style"): CarPlay's keeps its look, everyone else gets AARE's.
+     */
+    var carThemeId: String
+        get() = prefs.getString("style_theme", null) ?: when (prefs.getString("car_style", null)) {
+            "carplay" -> "carplay"
+            "gts" -> "gts" // ours: the GTS style became a theme with 1.5.0
+            else -> "aare"
+        }
+        set(v) = prefs.edit { putString("style_theme", v) }
+
+    /** The car screen's layout, an id from `CarLayout`: [carThemeId]'s rule for the old setting. */
+    var carLayoutId: String
+        get() = prefs.getString("style_layout", null) ?: if (legacyCarPlay) "dock" else "taskbar"
+        set(v) = prefs.edit { putString("style_layout", v) }
+
+    private val legacyCarPlay: Boolean get() = prefs.getString("car_style", null) == "carplay"
+
+    /**
+     * The accent colour, an id from `CarAccents`: the theme's own ("theme"), the phone's ("phone",
+     * Android 12 and later) or a colour. On a single-colour theme it colours everything.
+     */
+    var carAccent: String
+        get() = prefs.getString("style_accent", null) ?: "theme"
+        set(v) = prefs.edit { putString("style_accent", v) }
 
     /**
      * The card over the player: the car ([CORNER_CAR]: speed, OBD2 or the drive by GPS, weather) or
@@ -156,10 +194,6 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("show_weather", true)
         set(v) = prefs.edit { putBoolean("show_weather", v) }
 
-    /** The next calendar event on the dashboard. */
-    var showCalendar: Boolean
-        get() = prefs.getBoolean("show_calendar", true)
-        set(v) = prefs.edit { putBoolean("show_calendar", v) }
 
     /** Behind the dashboard: none, one of the built-in gradients, or [WALLPAPER_CUSTOM] (filesDir/wallpaper.jpg). */
     var wallpaper: String
@@ -170,6 +204,18 @@ class Settings(context: Context) {
     var darkBar: Boolean
         get() = prefs.getBoolean("dark_bar", false)
         set(v) = prefs.edit { putBoolean("dark_bar", v) }
+
+    /**
+     * The dashboard's cards in order, ids from `DashCard`. Before it was configurable, two switches
+     * set it: "music first" and "next calendar event" (the latest notification came last).
+     */
+    var dashboardCards: List<String>
+        get() = prefs.getString("dashboard_cards", null)?.split(',')?.filter { it.isNotBlank() } ?: buildList {
+            if (prefs.getBoolean("dashboard_media_first", false)) addAll(listOf("media", "map")) else addAll(listOf("map", "media"))
+            if (prefs.getBoolean("show_calendar", true)) add("calendar")
+            add("notification")
+        }
+        set(v) = prefs.edit { putString("dashboard_cards", v.joinToString(",")) }
 
     /** Car screen colors: follow the car's day/night signal ([THEME_AUTO]), or always [THEME_DARK] / [THEME_LIGHT]. */
     var carTheme: String
@@ -283,6 +329,26 @@ class Settings(context: Context) {
         set(v) = prefs.edit { putInt("phone_apps_dpi", v) }
 
     /**
+     * Sizes chosen app by app ("package=dpi"), over [phoneAppsDpi]: [PHONE_APPS_DPI_PHONE],
+     * [PHONE_APPS_DPI_TABLET], a density, or [PHONE_APPS_DPI_GENERAL] (the general size, chosen).
+     */
+    var phoneAppDpis: Map<String, Int>
+        get() = (prefs.getStringSet("phone_app_dpis", emptySet()) ?: emptySet()).mapNotNull { e ->
+            val i = e.lastIndexOf('=')
+            val d = if (i > 0) e.substring(i + 1).toIntOrNull() else null
+            if (d == null) null else e.substring(0, i) to d
+        }.toMap()
+        set(v) = prefs.edit { putStringSet("phone_app_dpis", v.map { (k, d) -> "$k=$d" }.toSet()) }
+
+    /** What [packageName] is set to on its own (an app default when untouched), or [PHONE_APPS_DPI_GENERAL]. */
+    fun phoneAppDpiChoice(packageName: String): Int = phoneAppDpis[packageName] ?: APP_DPI_DEFAULTS[packageName] ?: PHONE_APPS_DPI_GENERAL
+
+    /** The size [packageName] opens at on the car: its own, or the general one. */
+    fun phoneAppDpi(packageName: String): Int = phoneAppDpiChoice(packageName).let { if (it == PHONE_APPS_DPI_GENERAL) phoneAppsDpi else it }
+
+    fun setPhoneAppDpi(packageName: String, dpi: Int) { phoneAppDpis = phoneAppDpis + (packageName to dpi) }
+
+    /**
      * The phone app shown live in the GTS home screen's big card (a package), or "" for the car
      * navigation app (CoMaps…). Google Maps by default.
      */
@@ -312,6 +378,11 @@ class Settings(context: Context) {
     var standaloneApps: Boolean
         get() = prefs.getBoolean("standalone_apps", false)
         set(v) = prefs.edit { putBoolean("standalone_apps", v) }
+
+    /** Keep standalone apps active when Android links their display to the phone display. */
+    var standaloneKeepScreenAwake: Boolean
+        get() = prefs.getBoolean("standalone_keep_screen_awake", false)
+        set(v) = prefs.edit { putBoolean("standalone_keep_screen_awake", v) }
 
     /** The packages the user allows onto the car screen (see [standaloneApps]). */
     var standaloneAppPackages: Set<String>
@@ -455,6 +526,26 @@ class Settings(context: Context) {
     val instanceId: String
         get() = prefs.getString("instance_id", null) ?: UUID.randomUUID().toString().also { prefs.edit { putString("instance_id", it) } }
 
+    /**
+     * Replace the downloaded certificate when a newer one is published (see CertificateUpdates).
+     * Off by default: it means a daily request to a third-party repository.
+     */
+    var certAutoUpdate: Boolean
+        get() = prefs.getBoolean("cert_auto_update", false)
+        set(v) = prefs.edit { putBoolean("cert_auto_update", v) }
+
+    // Certificate-update state (see CertificateUpdates): when the repository was last asked, and
+    // the expiry warning already notified and the one dismissed, as "name|expired" keys.
+    var certUpdateLastCheckMs: Long
+        get() = prefs.getLong("cert_update_last_check_ms", 0)
+        set(v) = prefs.edit { putLong("cert_update_last_check_ms", v) }
+    var certExpiryNotified: String?
+        get() = prefs.getString("cert_expiry_notified", null)
+        set(v) = prefs.edit { putString("cert_expiry_notified", v) }
+    var certExpiryDismissed: String?
+        get() = prefs.getString("cert_expiry_dismissed", null)
+        set(v) = prefs.edit { putString("cert_expiry_dismissed", v) }
+
     /** Index of the certificate to offer first (rotates after a head unit rejects one). */
     var certificateIndex: Int
         get() = prefs.getInt("cert_index", 0)
@@ -469,9 +560,6 @@ class Settings(context: Context) {
         const val THEME_AUTO = "auto"
         const val THEME_DARK = "dark"
         const val THEME_LIGHT = "light"
-        const val STYLE_AUTO = "auto"
-        const val STYLE_CARPLAY = "carplay"
-        const val STYLE_GTS = "gts"
         const val MOTION_FULL = "full"
         const val CARDS_MAP = "map"
         const val CARDS_BALANCED = "balanced"
@@ -492,6 +580,15 @@ class Settings(context: Context) {
         val PHONE_APP_DPIS = listOf(120, 140, 160, 180, 210, 240, 280, 320)
         /** [phoneAppsDpi] value for "tablet": the largest size at which apps still lay out as on a tablet (see PhoneApps.tabletDpi). */
         const val PHONE_APPS_DPI_TABLET = 0
+        /** An app's size: the biggest at which it still lays out as on a phone (see PhoneApps.phoneDpi). */
+        const val PHONE_APPS_DPI_PHONE = -1
+        /** An app's size: the general one ([phoneAppsDpi]). */
+        const val PHONE_APPS_DPI_GENERAL = -2
+        /**
+         * Apps' own sizes until the user picks one: YouTube as on a phone, its tablet layout was a
+         * nuisance on the car (2026-11-15).
+         */
+        val APP_DPI_DEFAULTS = mapOf("com.google.android.youtube" to PHONE_APPS_DPI_PHONE)
         /** In [barApps]: whichever media app is in use. */
         const val BAR_MEDIA = "@media"
         /** In [barApps]: whichever navigation app is in use. */

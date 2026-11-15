@@ -39,14 +39,17 @@ import net.prototux.aare.ui.theme.LocalCarDimens
 internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
     var theme by remember { mutableStateOf(settings.carTheme) }
     var rail by remember { mutableStateOf(settings.railPosition) }
-    var style by remember { mutableStateOf(settings.carStyle) }
+    var themeId by remember { mutableStateOf(settings.carThemeId) }
+    var layoutId by remember { mutableStateOf(settings.carLayoutId) }
+    var accent by remember { mutableStateOf(settings.carAccent) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
     var corner by remember { mutableStateOf(settings.cornerCard) }
-    var cards by remember { mutableStateOf(settings.cardScale) }
+    var cardScale by remember { mutableStateOf(settings.cardScale) }
     var banners by remember { mutableStateOf(settings.messageBanners) }
     var aloud by remember { mutableStateOf(settings.readMessagesAloud) }
     var audio by remember { mutableStateOf(settings.carAudio) }
     var darkBar by remember { mutableStateOf(settings.darkBar) }
+    var cards by remember { mutableStateOf(DashCard.parse(settings.dashboardCards)) }
     var passenger by remember { mutableStateOf(settings.ignoreDriving) }
     var uiScale by remember { mutableStateOf(settings.uiScalePercent) }
     LazyColumn(
@@ -66,9 +69,12 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
             }
         }
         item {
-            Choice(stringResource(R.string.setup_choice_style), listOf(Settings.STYLE_AUTO to stringResource(R.string.setup_style_android_auto), Settings.STYLE_GTS to stringResource(R.string.setup_style_gts), Settings.STYLE_CARPLAY to stringResource(R.string.setup_style_carplay)), style) {
-                style = it; settings.carStyle = it
-            }
+            StyleChoices(
+                themeId, layoutId, accent,
+                choice = { title, options, selected, onSelect -> Choice(title, options, selected, onSelect) },
+                onChange = { t, l -> themeId = t; layoutId = l; settings.carThemeId = t; settings.carLayoutId = l },
+                onAccent = { accent = it; settings.carAccent = it },
+            )
         }
         item {
             Choice(stringResource(R.string.setup_choice_animations), animationChoices(), motion) {
@@ -76,8 +82,8 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
             }
         }
         item {
-            Choice(stringResource(R.string.setup_choice_card_scale), cardScaleChoices(), cards) {
-                cards = it; settings.cardScale = it
+            Choice(stringResource(R.string.setup_choice_card_scale), cardScaleChoices(), cardScale) {
+                cardScale = it; settings.cardScale = it
             }
         }
         item {
@@ -91,6 +97,9 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
             }
         }
         item { SwitchRow(stringResource(R.string.setup_switch_dark_bar), darkBar) { darkBar = it; settings.darkBar = it } }
+        item {
+            DashboardCardsEditor(cards, LocalCarDimens.current.touchTarget) { cards = it; settings.dashboardCards = it.map(DashCard::id) }
+        }
         item { SwitchRow(stringResource(R.string.setup_switch_passenger), passenger) { passenger = it; settings.ignoreDriving = it } }
         item { SwitchRow(stringResource(R.string.setup_switch_message_notifications), banners) { banners = it; settings.messageBanners = it } }
         item { SwitchRow(stringResource(R.string.msg_toggle_read_aloud_title), aloud) { aloud = it; settings.readMessagesAloud = it } }

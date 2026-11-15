@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import net.prototux.aare.car.NextEvent
 import net.prototux.aare.car.Weather
 import net.prototux.aare.notify.PhoneGuidance
+import net.prototux.aare.ui.theme.AareTheme
 
 /**
  * What kind of app an entry in the launcher is, which decides where its UI goes. [EXIT] has no UI:
@@ -131,12 +132,16 @@ class CarUiState {
     var driverOnRight by mutableStateOf(false)
     /** The rail stays dark even with day colors (a setting). */
     var darkBar by mutableStateOf(false)
-    /** The CarPlay-style layout (an easter egg, *Settings > Style*). */
-    var carPlayStyle by mutableStateOf(false)
-    /** The GTS look: always dark, red accent, Barlow and its own home screen layout (*Settings > Style*). */
-    var gtsStyle by mutableStateOf(false)
     /** How much the car screen animates (Settings.carAnimations). */
     var motion by mutableStateOf(CarMotion.FULL)
+    /** The dashboard's cards, in order (a setting). */
+    var dashboardCards by mutableStateOf(DashCard.DEFAULT)
+    /** The weather next to the clock (a setting; the weather card is one of [dashboardCards]). */
+    var weatherInBar by mutableStateOf(true)
+    /** The theme (a setting, with the phone's accent colours if asked). */
+    var theme by mutableStateOf(AareTheme)
+    /** Where things go: a taskbar and dashboard, or a dock and app pages (a setting). */
+    var layout by mutableStateOf(CarLayout.TASKBAR)
     /** The rail runs along the bottom instead of a side. */
     var railBottom by mutableStateOf(false)
     /** The app on the car screen shows a video full screen (its bars hidden): AARE's bar hides too. */
