@@ -56,6 +56,13 @@ object CarStyles {
         all.firstOrNull { it.themeId == themeId && it.layout == layout }
 }
 
+/** The GTS theme's type: italic (its own look) or upright, for both settings screens. */
+@Composable
+internal fun gtsFontChoices(): List<Pair<String, String>> = listOf(
+    "italic" to stringResource(R.string.gts_font_italic),
+    "upright" to stringResource(R.string.gts_font_upright),
+)
+
 /**
  * The Style, Theme, Layout and Accent choices, for the car's and the phone's settings (each draws
  * a choice its own way, through [choice]). A style sets the theme and layout; either alone makes

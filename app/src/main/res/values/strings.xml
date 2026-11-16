@@ -245,6 +245,9 @@
     <string name="theme_high_contrast">High contrast</string>
     <string name="theme_night">Night</string>
     <string name="theme_retro">Retro</string>
+    <string name="setup_choice_gts_font">GTS font</string>
+    <string name="gts_font_italic">Italic</string>
+    <string name="gts_font_upright">Upright</string>
     <string name="setup_choice_accent">Accent color</string>
     <string name="accent_theme">Theme\'s</string>
     <string name="accent_phone">Phone\'s</string>

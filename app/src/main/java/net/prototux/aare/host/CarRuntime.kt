@@ -68,6 +68,7 @@ import net.prototux.aare.ui.theme.CarThemes
 import net.prototux.aare.ui.theme.LocalCarDimens
 import net.prototux.aare.ui.theme.forPhone
 import net.prototux.aare.ui.theme.withAccent
+import net.prototux.aare.ui.theme.withGtsFont
 
 /**
  * Everything on the car screen that doesn't depend on how it reaches the car: the app list,
@@ -315,6 +316,7 @@ class CarRuntime(
         // Passenger mode lifts the driving restrictions (keyboard, list lengths, phone screen).
         ui.drivingRestricted = carDriving && !settings.ignoreDriving
         ui.theme = CarThemes.byId(settings.carThemeId).forPhone(context).withAccent(settings.carAccent, context)
+            .withGtsFont(settings.gtsItalic)
         ui.layout = CarLayout.byId(settings.carLayoutId)
         ui.darkBar = settings.darkBar
         ui.dashboardCards = DashCard.parse(settings.dashboardCards)
@@ -345,7 +347,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "style_theme", "style_layout", "style_accent", "dark_bar", "dashboard_cards", "show_weather", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car", "card_scale" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "style_theme", "style_layout", "style_accent", "gts_italic", "dark_bar", "dashboard_cards", "show_weather", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car", "card_scale" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }

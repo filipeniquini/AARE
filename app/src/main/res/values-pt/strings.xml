@@ -150,6 +150,9 @@
     <string name="theme_high_contrast">Alto contraste</string>
     <string name="theme_night">Noite</string>
     <string name="theme_retro">Retro</string>
+    <string name="setup_choice_gts_font">Fonte do GTS</string>
+    <string name="gts_font_italic">Itálica</string>
+    <string name="gts_font_upright">Normal</string>
     <string name="setup_choice_accent">Cor de destaque</string>
     <string name="accent_theme">Do tema</string>
     <string name="accent_phone">Do telemóvel</string>

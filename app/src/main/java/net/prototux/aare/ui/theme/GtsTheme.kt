@@ -36,6 +36,13 @@ val GtsTheme: CarThemeSpec by lazy {
     )
 }
 
+/**
+ * The GTS theme with its type upright (Barlow without the slant) when [italic] is off, the user's
+ * choice (2026-11-16); any other theme as it is.
+ */
+fun CarThemeSpec.withGtsFont(italic: Boolean): CarThemeSpec =
+    if (id != GTS_THEME_ID || italic) this else copy(typography = CarTypography.withFamily(BarlowUpright))
+
 /** Stored in the settings ("style_theme"); was "car_style" = "gts" before upstream's themes. */
 const val GTS_THEME_ID = "gts"
 
@@ -103,6 +110,13 @@ private val Barlow = FontFamily(
     Font(R.font.barlow_semi_condensed_medium_italic, FontWeight.Normal),
     Font(R.font.barlow_semi_condensed_medium_italic, FontWeight.Medium),
     Font(R.font.barlow_semi_condensed_bold_italic, FontWeight.Bold),
+)
+
+/** The same Barlow Semi Condensed, upright (SIL OFL, from Google Fonts). */
+private val BarlowUpright = FontFamily(
+    Font(R.font.barlow_semi_condensed_medium, FontWeight.Normal),
+    Font(R.font.barlow_semi_condensed_medium, FontWeight.Medium),
+    Font(R.font.barlow_semi_condensed_bold, FontWeight.Bold),
 )
 
 private fun Typography.withFamily(family: FontFamily) = Typography(

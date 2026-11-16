@@ -150,6 +150,11 @@ class Settings(context: Context) {
         get() = prefs.getString("style_accent", null) ?: "theme"
         set(v) = prefs.edit { putString("style_accent", v) }
 
+    /** The GTS theme's type in italic (its look since 2026-11-08) or upright, the user's choice. */
+    var gtsItalic: Boolean
+        get() = prefs.getBoolean("gts_italic", true)
+        set(v) = prefs.edit { putBoolean("gts_italic", v) }
+
     /**
      * The card over the player: the car ([CORNER_CAR]: speed, OBD2 or the drive by GPS, weather) or
      * the clock ([CORNER_CLOCK]: time, the full weather and the agenda), the user's choice (2026-11-13).
