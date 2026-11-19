@@ -104,6 +104,16 @@ internal fun PhoneAppScreen(
         }
     }
 
+    // The map card, while shown: its app opened again if Android ended it (the card went black).
+    if (!reopen && show) {
+        androidx.compose.runtime.LaunchedEffect(component) {
+            while (true) {
+                kotlinx.coroutines.delay(KEEP_OPEN_CHECK_MS)
+                host.keepOpen(component)
+            }
+        }
+    }
+
     // In the card: the display's own size, drawn scaled into the view (same proportions).
     val cardSize = if (inCard) host.currentSize else null
     // No display yet (played from home after a reconnection): made full-screen sized, the card's shape.
@@ -124,7 +134,7 @@ internal fun PhoneAppScreen(
                                 val (dw, dh) = displaySize(w, h)?.also { st.setDefaultBufferSize(it.first, it.second) } ?: (w to h)
                                 surface = Surface(st)
                                 // Opened each time it's shown: an app already running comes to the front as it was.
-                                host.attach(context, surface!!, dw, dh, dpiFor(dw, dh)) { fresh -> if (reopen || fresh) host.open(component) }
+                                host.attach(context, surface!!, dw, dh, dpiFor(dw, dh)) { fresh -> if (reopen || fresh) host.open(component) else host.keepOpen(component) }
                             }
                             override fun onSurfaceTextureSizeChanged(st: SurfaceTexture, w: Int, h: Int) {
                                 val (dw, dh) = displaySize(w, h)?.also { st.setDefaultBufferSize(it.first, it.second) } ?: (w to h)
@@ -202,6 +212,9 @@ private val CARD_KEY_HEIGHT = androidx.compose.ui.unit.Dp(38f)
 
 /** How often a video app is asked whether it's full screen. */
 private const val FULLSCREEN_CHECK_MS = 1_500L
+
+/** How often the map card checks that its app still runs (a pidof in the helper). */
+private const val KEEP_OPEN_CHECK_MS = 10_000L
 
 /** The height of a display first made for the media card: about the car screen's, so apps lay out as there. */
 private const val CARD_FRESH_HEIGHT = 653

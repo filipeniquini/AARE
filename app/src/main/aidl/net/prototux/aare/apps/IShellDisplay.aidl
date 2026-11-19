@@ -64,5 +64,8 @@ interface IShellDisplay {
     /** Types [text] into what has the focus on the slot's display, as key presses. */
     void typeText(int slot, String text) = 13;
 
+    /** Whether [packageName]'s process is running (Android may end a map app left in the background). */
+    boolean running(String packageName) = 14;
+
     void destroy() = 16777114;
 }
