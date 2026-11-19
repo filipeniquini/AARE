@@ -50,6 +50,14 @@ Screenshots from the desktop head unit (`./headunit.sh`) at the car's 1280x720, 
 
 ![Animations](docs/vw-play/animations.gif)
 
+**Cockpit, an app for an OBD2 adapter** (any ELM327 over Bluetooth; read only, and off until you turn on Settings > OBD2): revs, speed with the gear it learns and a shift light, boost or engine load, temperatures, battery, tank, and fuel use estimated from what the car reports (with the engine size, tank and fuel set in the app). Also a trip page, a history, and track pages (0-100 and other timed runs, lap timer, dyno, G force) for a track or a closed area only. In the GTS style it takes the home screen's look; in the other styles, theirs. It's also proposed to the official project (prototux/AARE#327 and #328). The screenshots use the pretend adapter:
+
+| Dashboard | Trip |
+|---|---|
+| ![Cockpit dashboard, GTS style](docs/vw-play/cockpit-dashboard.jpg) | ![Cockpit trip, GTS style](docs/vw-play/cockpit-trip.jpg) |
+| **Track** | **Android Auto style** |
+| ![Cockpit track page, GTS style](docs/vw-play/cockpit-track.jpg) | ![Cockpit dashboard, Android Auto style](docs/vw-play/cockpit-android-auto.jpg) |
+
 ### Em português
 
 Esta é a minha versão pessoal do AARE, ajustada e testada num **VW Polo GTS 2023** com a central **VW Play** (Visteon; no log ela aparece como `Visteon MIB Regio`, protocolo 1.5), software **0576** (16.03.22), hardware **H07**, peça **2GM035180A**, com um Pixel 7 Pro, Android 17 e Shizuku. As correções que servem para todos vão para o projeto oficial por PRs.
@@ -66,7 +74,7 @@ Esses carros provavelmente se comportam como o meu, mas **eu não testei nenhum 
 
 Use por sua conta e risco; esta versão não é revisada pelo dono do AARE. Para a maioria das pessoas, a versão oficial é a melhor escolha.
 
-As imagens acima mostram o que esta versão acrescenta: tela inicial com mapa, cartão do carro e player com vídeo, vídeo em tela cheia, os cartões do canto, os outros estilos, o Gemini na tela do carro e as animações.
+As imagens acima mostram o que esta versão acrescenta: tela inicial com mapa, cartão do carro e player com vídeo, vídeo em tela cheia, os cartões do canto, os outros estilos, o Gemini na tela do carro, as animações e o Cockpit, um app para adaptador OBD2 (só leitura, desligado até você ligar em Ajustes > OBD2), com painel, viagem, histórico e páginas de pista (só para pista ou área fechada).
 
 ---
 
