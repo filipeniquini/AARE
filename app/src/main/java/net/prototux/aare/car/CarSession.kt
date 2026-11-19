@@ -64,6 +64,7 @@ import net.prototux.aare.aap.channels.PassiveChannel
 import net.prototux.aare.aap.channels.SensorChannel
 import net.prototux.aare.aap.channels.VideoChannel
 import net.prototux.aare.aap.channels.WifiProjectionChannel
+import net.prototux.aare.BuildConfig
 import net.prototux.aare.DiagLog
 import net.prototux.aare.PinnedHeadUnits
 import net.prototux.aare.audio.AudioPolicySource
@@ -192,7 +193,10 @@ class CarSession(
         // The car's own readings for the GTS car card, from the OBD2 adapter while connected.
         holdMusicUntilCarAudio()
         net.prototux.aare.obd.GpsTrip.start()
-        if (settings.obdEnabled) net.prototux.aare.obd.ObdReader.start(context, settings.obdSimulated)
+        if (settings.obdEnabled) {
+            net.prototux.aare.obdapp.ObdApp.attach(context)
+            net.prototux.aare.obd.ObdReader.start(context, settings.obdSimulated, owner = this)
+        }
         if (settings.accessibilityInCarOnly && settings.phoneScreen) net.prototux.aare.mirror.AccessibilitySwitch.carConnected(context)
         settings.registerListener(uiScaleListener)
         listener.onStatus(this, context.getString(R.string.notif_status_connecting_to, transport.name))
@@ -375,6 +379,7 @@ class CarSession(
             // A route that started before the session was running still gets the focus.
             requestNavFocus()
             drivingMode.start()
+            // Opt-in: engine data from an OBD2 adapter for the Car data viewers (held only while connected).
             net.prototux.aare.notify.CarNotificationListener.sink = { m ->
                 drivingMode.onMessage(m.key, m.group)
                 if (!m.group || settings.groupMessages) {
@@ -1321,7 +1326,7 @@ class CarSession(
         // Session ending while music fed the car: pause it, so it doesn't jump to the phone speaker
         // (and the phone's music muted again if this session unmuted it).
         pauseMusicOnLeave()
-        net.prototux.aare.obd.ObdReader.stop(context)
+        net.prototux.aare.obd.ObdReader.stop(owner = this)
         if (settings.accessibilityInCarOnly) net.prototux.aare.mirror.AccessibilitySwitch.carGone(context)
         main.removeCallbacks(focusFallback)
         main.removeCallbacks(videoReport)

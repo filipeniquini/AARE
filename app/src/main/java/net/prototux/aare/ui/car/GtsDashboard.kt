@@ -169,10 +169,10 @@ internal fun sideWeight(scale: String): Float = when (scale) {
 }
 
 /** The car card's grey, like the VW Play's own screens. */
-private val CAR_CARD = Color(0xFF3F4247)
+internal val CAR_CARD = Color(0xFF3F4247)
 
 /** At night: a grey so dark it's nearly black, just enough to tell from the black boxes and screen. */
-private val CAR_CARD_NIGHT = Color(0xFF141518)
+internal val CAR_CARD_NIGHT = Color(0xFF141518)
 
 /** Top of the scale on the rev bar, in thousands, and where its red zone starts. */
 private const val REV_MAX = 7
@@ -695,13 +695,16 @@ private fun WeatherRow(state: CarUiState, s: Scale, big: Boolean = false) {
 @Composable
 private fun ReadingsGrid(r: ObdReadings?, s: Scale, modifier: Modifier) {
     fun f(v: Float?, pattern: String) = v?.let { pattern.format(it) } ?: "--"
+    // Range and consumption come from the Cockpit app's sums, with the car's details from its settings.
+    val cockpit by net.prototux.aare.obdapp.ObdApp.snapshot.collectAsState()
+    val live = r != null && cockpit.readings != null
     val readings = listOf(
         Triple(ObdIcons.Coolant, stringResource(R.string.gts_water), f(r?.coolant, "%.0f") to "°C"),
         Triple(ObdIcons.Boost, stringResource(R.string.gts_boost), f(r?.boost, "%+.2f") to "bar"),
         Triple(ObdIcons.Battery, stringResource(R.string.gts_battery), f(r?.battery, "%.1f") to "V"),
         Triple(ObdIcons.Fuel, stringResource(R.string.gts_fuel), f(r?.fuel, "%.0f") to "%"),
-        Triple(ObdIcons.Range, stringResource(R.string.gts_range), f(r?.rangeKm, "%.0f") to "km"),
-        Triple(ObdIcons.Economy, stringResource(R.string.gts_consumption), f(r?.economy, "%.1f") to "km/l"),
+        Triple(ObdIcons.Range, stringResource(R.string.gts_range), f(cockpit.rangeKm?.takeIf { live }, "%.0f") to "km"),
+        Triple(ObdIcons.Economy, stringResource(R.string.gts_consumption), f(cockpit.kmPerLiter?.takeIf { live }, "%.1f") to "km/l"),
     )
     Grid(readings, s, modifier)
 }

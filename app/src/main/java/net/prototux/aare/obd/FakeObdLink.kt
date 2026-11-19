@@ -1,13 +1,12 @@
 package net.prototux.aare.obd
 
 /**
- * A pretend adapter: answers like an ELM327 on a Polo and "drives" a 40 s loop (speeding up,
- * cruising, braking, standing). For trying the car card without the car. Ported from the user's
- * dongle launcher (`ObdFalso.java`).
+ * A pretend adapter: answers like an ELM327 and "drives" a 40 s loop (speeding up, cruising,
+ * braking, standing). For the tests, and for trying the Car data page without a car (debug builds).
  */
 class FakeObdLink(override val name: String = "Simulator", private val clock: () -> Long = System::currentTimeMillis, private val delayMs: Long = 40) : ObdLink {
     private val start = clock()
-    private val has = Elm327.READ.toSet()
+    private val has = Elm327.READ.toSet() - Elm327.FUEL_RATE
 
     override fun close() = Unit
 
@@ -52,6 +51,9 @@ class FakeObdLink(override val name: String = "Simulator", private val clock: ()
             Elm327.FUEL -> pct(62f)
             Elm327.ETHANOL -> pct(32f)
             Elm327.BATTERY -> 14_100.let { "%02X%02X".format(it shr 8, it and 0xFF) }
+            Elm327.MAF -> Math.round(manifold / 100f * rpm / 60f * 100f).let { "%02X%02X".format(it shr 8, it and 0xFF) }
+            Elm327.THROTTLE, Elm327.PEDAL -> pct(load)
+            Elm327.OIL -> "%02X".format(98 + 40)
             else -> "00"
         }
     }

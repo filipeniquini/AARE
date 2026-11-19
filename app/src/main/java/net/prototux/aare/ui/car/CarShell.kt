@@ -68,6 +68,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -99,6 +100,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import net.prototux.aare.R
 import net.prototux.aare.notify.PhoneGuidance
 import net.prototux.aare.ui.theme.CarTheme
@@ -653,7 +656,6 @@ private fun DashSlot(
                 val h = minOf(maxWidth * 9f / 16f, maxHeight)
                 MediaCard(state, actions, compact = false, modifier = Modifier.width(h * 16f / 9f).height(h))
             }
-        DashCard.CAR -> CarInfoCard(state, modifier, actions)
         DashCard.CALENDAR -> state.nextEvent?.let { event -> Card(modifier) { CalendarCard(event, actions::navigateTo, Modifier.fillMaxSize()) } }
         DashCard.NOTIFICATION -> state.history.firstOrNull()?.let { latest ->
             Card(modifier, onClick = { state.apps.firstOrNull { it.kind == CarAppKind.NOTIFICATIONS }?.let(actions::openApp) }) {
@@ -661,6 +663,15 @@ private fun DashSlot(
             }
         }
         DashCard.WEATHER -> state.weather?.let { weather -> Card(modifier) { WeatherCard(weather) } }
+        // The GTS car card (adapter or GPS) in GTS; elsewhere the Cockpit's car card while the
+        // adapter is read, else the corner card the user picked (clock…).
+        DashCard.CAR -> {
+            val obd by net.prototux.aare.obdapp.ObdApp.snapshot.collectAsState()
+            if (net.prototux.aare.ui.theme.LocalGtsStyle.current || obd.readings == null) CarInfoCard(state, modifier, actions)
+            else Card(modifier, onClick = { state.apps.firstOrNull { it.kind == CarAppKind.OBD }?.let(actions::openApp) }) {
+                net.prototux.aare.ui.car.obd.ObdDashCard(obd, compact)
+            }
+        }
     }
 }
 
