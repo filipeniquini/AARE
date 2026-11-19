@@ -238,6 +238,28 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
         if (!ok) DiagLog.add("phone apps ($name): couldn't open ${app.packageName}")
     }
 
+    /** When [keepOpen] last opened the app again. */
+    @Volatile private var reopenedMs = 0L
+
+    /**
+     * The map card's watchdog (2026-11-19): Android may end the map app after a long while in the
+     * background, and the card, which only opens it when its display is new, stayed black. When
+     * [app] isn't running, and nothing else live is in front (Gemini over it stays as it is), it is
+     * opened again. A cheap check (pidof) unless the app is gone.
+     */
+    fun keepOpen(app: ComponentName) = worker.execute {
+        val s = service ?: return@execute
+        if (displayId < 0) return@execute
+        if (runCatching { s.running(app.packageName) }.getOrDefault(true)) return@execute
+        val top = runCatching { s.topPackage(slot) }.getOrNull()
+        if (top != null && top != app.packageName && runCatching { s.running(top) }.getOrDefault(true)) return@execute
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - reopenedMs < REOPEN_EVERY_MS) return@execute
+        reopenedMs = now
+        DiagLog.add("phone apps ($name): ${app.packageName} no longer running, opened again")
+        open(app)
+    }
+
     /** When the current gesture started, on this phone's uptime clock. */
     private var gestureDown = 0L
 
@@ -316,6 +338,8 @@ class PhoneAppHost(private val name: String, private val slot: Int) {
         const val TAG = "AarePhoneApps"
         /** How often the display is checked for a call screen (a cheap call into the helper). */
         const val GUARD_MS = 1_000L
+        /** At most one reopening this often: the app gets time to start. */
+        const val REOPEN_EVERY_MS = 15_000L
     }
 }
 

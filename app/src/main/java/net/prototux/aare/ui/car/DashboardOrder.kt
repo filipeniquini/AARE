@@ -11,7 +11,8 @@ enum class DashCard(
     NOTIFICATION("notification"),
     WEATHER("weather"),
 
-    /** Ours: the car card (OBD2 adapter or GPS trip) or what Settings > Corner card picks (clock...). */
+    /** Ours: the car card (OBD2 adapter or GPS trip) or what Settings > Corner card picks (clock...); in
+     * other themes the Cockpit app's car card while the adapter is read. */
     CAR("car");
 
     companion object {

@@ -68,6 +68,7 @@ import net.prototux.aare.ui.theme.CarThemes
 import net.prototux.aare.ui.theme.LocalCarDimens
 import net.prototux.aare.ui.theme.forPhone
 import net.prototux.aare.ui.theme.withAccent
+import net.prototux.aare.ui.theme.withGtsFont
 
 /**
  * Everything on the car screen that doesn't depend on how it reaches the car: the app list,
@@ -315,6 +316,7 @@ class CarRuntime(
         // Passenger mode lifts the driving restrictions (keyboard, list lengths, phone screen).
         ui.drivingRestricted = carDriving && !settings.ignoreDriving
         ui.theme = CarThemes.byId(settings.carThemeId).forPhone(context).withAccent(settings.carAccent, context)
+            .withGtsFont(settings.gtsItalic)
         ui.layout = CarLayout.byId(settings.carLayoutId)
         ui.darkBar = settings.darkBar
         ui.dashboardCards = DashCard.parse(settings.dashboardCards)
@@ -345,7 +347,7 @@ class CarRuntime(
 
     private val settingsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         when (key) {
-            "car_theme", "rail_position", "style_theme", "style_layout", "style_accent", "dark_bar", "dashboard_cards", "show_weather", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car", "card_scale" -> main.post { applyScreenSettings() }
+            "car_theme", "rail_position", "style_theme", "style_layout", "style_accent", "gts_italic", "dark_bar", "dashboard_cards", "show_weather", "ignore_driving", "bar_apps", "bar_recents", "car_animations", "corner_card", "theme_follows_car", "card_scale" -> main.post { applyScreenSettings() }
             "wallpaper" -> main.post { ui.wallpaper = ""; applyScreenSettings() }
             // Apps shown or hidden from the phone: update the car's app list now.
             "hidden_apps", "phone_screen", "assistant_pkg", "app_order", "phone_apps", "phone_apps_shown", "map_card_app" -> main.post { refreshApps() }
@@ -573,6 +575,10 @@ class CarRuntime(
         }
         if (settings.browser) {
             entries += CarAppEntry(BROWSER_ID, context.packageName, context.getString(R.string.browser_app_label), builtinIcon(R.drawable.ic_car_browser), CarAppKind.BROWSER)
+        }
+        // The OBD2 app: only with the adapter setting on, so turning that off removes it all.
+        if (settings.obdEnabled) {
+            entries += CarAppEntry(OBD_ID, context.packageName, context.getString(R.string.obd_app_label), builtinIcon(R.drawable.ic_car_obd), CarAppKind.OBD)
         }
         if (settings.carDataApp) {
             entries += CarAppEntry(CAR_DATA_ID, context.packageName, context.getString(R.string.car_data_app_label), builtinIcon(R.drawable.ic_car_data), CarAppKind.CAR_DATA)
@@ -1176,6 +1182,7 @@ class CarRuntime(
                             CarAppKind.STANDALONE -> StandaloneAppScreen(this, ui.drivingRestricted, app.packageName, mod)
                             CarAppKind.BROWSER -> BrowserScreen(this, ui.drivingRestricted, settings.browserUrl, mod)
                             CarAppKind.CAR_DATA -> CarDataScreen(mod)
+                            CarAppKind.OBD -> net.prototux.aare.ui.car.obd.ObdAppScreen(mod, location = { carLocation })
                             CarAppKind.PHONE -> PhoneScreen(this, mod)
                             CarAppKind.SETTINGS -> CarSettingsScreen(settings, mod)
                             CarAppKind.NOTIFICATIONS -> NotificationsScreen(ui, mod)
@@ -1229,6 +1236,7 @@ class CarRuntime(
         const val PHONE_SCREEN_ID = "phone-screen"
         const val BROWSER_ID = "browser"
         const val CAR_DATA_ID = "car-data"
+        const val OBD_ID = "obd"
         const val PHONE_ID = "phone"
         const val SETTINGS_ID = "car-settings"
         const val NOTIFICATIONS_ID = "notifications"

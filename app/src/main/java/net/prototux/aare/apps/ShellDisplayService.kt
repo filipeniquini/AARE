@@ -168,6 +168,13 @@ class ShellDisplayService : IShellDisplay.Stub {
         }
     }
 
+    override fun running(packageName: String?): Boolean {
+        val pkg = packageName?.takeIf { Regex("[A-Za-z][A-Za-z0-9_]*([.][A-Za-z0-9_]+)+").matches(it) } ?: return true
+        // Fixed program, the package as one argument; pidof prints nothing for no such process.
+        val out = output("pidof", pkg) ?: return true
+        return out.isNotBlank()
+    }
+
     override fun topPackage(slot: Int): String? {
         val id = idOf(slot) ?: return null
         // "Display #<id>" then its activities, top first: the first record names the package.

@@ -192,14 +192,18 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("map_card_app")?.let { Settings(this).mapCardApp = it }
         intent.getStringExtra("corner_card")?.let { Settings(this).cornerCard = it }
         intent.getStringExtra("card_scale")?.let { Settings(this).cardScale = it }
+        // Captures of the GTS theme in each accent and font.
+        intent.getStringExtra("accent")?.let { Settings(this).carAccent = it }
+        if (intent.hasExtra("gts_italic")) Settings(this).gtsItalic = intent.getBooleanExtra("gts_italic", true)
         intent.getStringExtra("start_screen")?.let { Settings(this).debugStartScreen = it }
         if (intent.hasExtra("hide_map")) Settings(this).debugHideMap = intent.getBooleanExtra("hide_map", false)
+        if (intent.hasExtra("obd_sim")) Settings(this).obdSimulated = intent.getBooleanExtra("obd_sim", false)
         if (intent.hasExtra("ui_scale")) Settings(this).uiScalePercent = intent.getIntExtra("ui_scale", 100)
         if (intent.hasExtra("theme_follows")) Settings(this).themeFollowsCar = intent.getBooleanExtra("theme_follows", false)
         if (intent.hasExtra("aod_off")) Settings(this).aodOffInCar = intent.getBooleanExtra("aod_off", false)
         // Measuring with and without the protocol trace.
         if (intent.hasExtra("verbose_log")) intent.getBooleanExtra("verbose_log", false).let { Settings(this).verboseProtocolLog = it; SessionAapLog.verbose = it }
-        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("theme_follows") || intent.hasExtra("card_scale") || intent.hasExtra("start_screen") || intent.hasExtra("hide_map") || intent.hasExtra("ui_scale") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log")
+        if (!intent.hasExtra("hu_server")) return intent.hasExtra("bar_recents") || intent.hasExtra("car_style") || intent.hasExtra("car_animations") || intent.hasExtra("map_card_app") || intent.hasExtra("aod_off") || intent.hasExtra("theme_follows") || intent.hasExtra("card_scale") || intent.hasExtra("start_screen") || intent.hasExtra("hide_map") || intent.hasExtra("ui_scale") || intent.hasExtra("corner_card") || intent.hasExtra("verbose_log") || intent.hasExtra("accent") || intent.hasExtra("gts_italic") || intent.hasExtra("obd_sim")
         Settings(this).headUnitServer = intent.getBooleanExtra("hu_server", false)
         return true
     }
@@ -757,6 +761,7 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
     var themeId by remember { mutableStateOf(settings.carThemeId) }
     var layoutId by remember { mutableStateOf(settings.carLayoutId) }
     var accent by remember { mutableStateOf(settings.carAccent) }
+    var gtsItalic by remember { mutableStateOf(settings.gtsItalic) }
     var rail by remember { mutableStateOf(settings.railPosition) }
     var phoneScreen by remember { mutableStateOf(settings.phoneScreen) }
     var mirrorScale by remember { mutableIntStateOf(settings.mirrorScalePercent) }
@@ -794,6 +799,12 @@ private fun CarScreenSettings(settings: Settings, refresh: Int) {
                 onChange = { t, l -> themeId = t; layoutId = l; settings.carThemeId = t; settings.carLayoutId = l },
                 onAccent = { accent = it; settings.carAccent = it },
             )
+            if (themeId == net.prototux.aare.ui.theme.GTS_THEME_ID) {
+                Spacer(Modifier.height(12.dp))
+                Choices(stringResource(R.string.setup_choice_gts_font), net.prototux.aare.ui.car.gtsFontChoices(), if (gtsItalic) "italic" else "upright") {
+                    gtsItalic = it == "italic"; settings.gtsItalic = gtsItalic
+                }
+            }
             Spacer(Modifier.height(12.dp))
             Choices(stringResource(R.string.setup_choice_colors), listOf(Settings.THEME_AUTO to stringResource(R.string.setup_choice_colors_auto), Settings.THEME_DARK to stringResource(R.string.setup_choice_dark), Settings.THEME_LIGHT to stringResource(R.string.setup_choice_light)), theme) {
                 theme = it; settings.carTheme = it
@@ -1683,8 +1694,12 @@ private fun CarDataCard() {
     val ctx = LocalContext.current
     val settings = remember { Settings(ctx) }
     var inCar by remember { mutableStateOf(settings.carDataApp) }
+    val obdOn = remember { settings.obdEnabled }
+    val obdStatus by net.prototux.aare.obd.ObdReader.status.collectAsState()
+    val obd by net.prototux.aare.obd.ObdReader.readings.collectAsState()
     Section(stringResource(R.string.setup_page_car_data_title)) {
         Toggle(stringResource(R.string.car_data_show_in_car_title), stringResource(R.string.car_data_show_in_car_subtitle), inCar) { inCar = it; settings.carDataApp = it }
+        // The OBD2 switch itself is in Settings > OBD2 (one switch for the GTS car card and the Cockpit app).
         if (!car.connected) {
             Spacer(Modifier.height(8.dp))
             Text(stringResource(R.string.car_data_not_connected), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1749,6 +1764,12 @@ private fun CarDataCard() {
         DataRow(stringResource(R.string.car_data_accelerometer), car.accelerometer?.let { a -> xyz(a.value) }?.let { "$it m/s²" })
         DataRow(stringResource(R.string.car_data_gyroscope), car.gyroscope?.let { g -> xyz(g.value) }?.let { "$it rad/s" })
         DataRow(stringResource(R.string.car_data_dtc), car.diagnostics?.value?.takeIf { it.isNotEmpty() }?.joinToString(" ") { "%02x".format(it) })
+    }
+    if (obdOn) {
+        Spacer(Modifier.height(16.dp))
+        Section(stringResource(R.string.obd_section)) {
+            net.prototux.aare.ui.car.obdDataLines(obdStatus, obd).forEach { (label, value) -> DataRow(label, value) }
+        }
     }
 }
 

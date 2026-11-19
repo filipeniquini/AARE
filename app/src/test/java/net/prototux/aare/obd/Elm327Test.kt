@@ -1,8 +1,8 @@
 package net.prototux.aare.obd
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,28 +36,61 @@ class Elm327Test {
         var now = 0L
         val link = FakeObdLink(clock = { now }, delayMs = 0)
         val supported = Elm327.prepare(link)
-        assertTrue(Elm327.READ.all { it in supported })
-        val poller = ObdPoller(link, supported, Trip())
+        // Everything but the fuel rate, which most cars don't report: fuel use is then estimated.
+        assertTrue((Elm327.READ - Elm327.FUEL_RATE).all { it in supported })
+        assertTrue(Elm327.FUEL_RATE !in supported)
+        val poller = ObdPoller(link, supported)
         now = 18_000 // cruising at 100 km/h
-        val r = poller.readRound(now)
+        val r = poller.readRound()
         assertEquals(100f, r.speed!!, 0.5f)
         assertEquals(2_300f, r.rpm!!, 1f)
         assertEquals(92f, r.coolant!!, 0.5f)
         assertEquals(62f, r.fuel!!, 0.5f)
-        assertNotNull(r.economy)
-        assertNotNull(r.boost)
+        assertEquals(14.1f, r.battery!!, 0.01f)
+        assertEquals(35f, r.load!!, 0.5f)
+        // manifold 95 kPa against 92 kPa outside: a little boost
+        assertEquals(0.03f, r.boost!!, 0.005f)
+        assertEquals(95f, r.manifoldKpa!!, 0.5f)
+        assertEquals(98f, r.oil!!, 0.5f)
+        // The medium ones (air flow, pedal) come on the first round too.
+        assertEquals(95f / 100f * 2300f / 60f, r.maf!!, 0.05f)
+        assertEquals(35f, r.pedal!!, 0.5f)
     }
 
     @Test
-    fun rangeFromTheTripOrTheLastOne() {
-        val trip = Trip(savedAverage = 10f)
-        assertEquals("the last drive's average until this one counts", 260f, trip.rangeKm(50f)!!, 0.1f)
-        // 30 minutes at 60 km/h and 12 km/l: 30 km on 2.5 l.
-        var t = 1L
-        trip.add(ObdReadings(speed = 60f, economy = 12f, rpm = 2000f), t)
-        repeat(360) { t += 5_000; trip.add(ObdReadings(speed = 60f, economy = 12f, rpm = 2000f), t) }
-        assertEquals(12f, trip.average()!!, 0.01f)
-        assertEquals(312f, trip.rangeKm(50f)!!, 0.5f)
-        assertNull(Trip().rangeKm(50f))
+    fun anAdapterThatGoesQuietIsDropped() {
+        val quiet = object : ObdLink {
+            override val name = "quiet"
+            override fun send(command: String, waitMs: Long) = ObdLink.NO_ANSWER
+            override fun close() = Unit
+        }
+        val poller = ObdPoller(quiet, setOf(Elm327.RPM, Elm327.SPEED))
+        assertThrows(java.io.IOException::class.java) { repeat(10) { poller.readRound() } }
+    }
+
+    @Test
+    fun everyRoundAsksTheSameNumberOfQuestions() {
+        val supported = Elm327.READ.toSet()
+        // Counts what reaches the adapter in each round.
+        val asked = ArrayList<Int>()
+        val fake = FakeObdLink(delayMs = 0)
+        val link = object : ObdLink by fake {
+            override fun send(command: String, waitMs: Long): String { asked += command.substring(2, 4).toInt(16); return fake.send(command, waitMs) }
+        }
+        val p = ObdPoller(link, supported)
+        // The first round fills everything in.
+        p.readRound()
+        assertEquals(supported, asked.toSet())
+        // Then: revs, speed, boost and one more, so the gauges move evenly.
+        val seen = HashSet<Int>()
+        repeat(40) {
+            asked.clear()
+            p.readRound()
+            assertEquals(Elm327.FAST.size + 1, asked.size)
+            assertTrue(asked.containsAll(Elm327.FAST))
+            seen += asked
+        }
+        // In 40 rounds every PID was read again.
+        assertEquals(supported, seen)
     }
 }

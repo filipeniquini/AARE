@@ -42,6 +42,7 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
     var themeId by remember { mutableStateOf(settings.carThemeId) }
     var layoutId by remember { mutableStateOf(settings.carLayoutId) }
     var accent by remember { mutableStateOf(settings.carAccent) }
+    var gtsItalic by remember { mutableStateOf(settings.gtsItalic) }
     var motion by remember { mutableStateOf(settings.carAnimations) }
     var corner by remember { mutableStateOf(settings.cornerCard) }
     var cardScale by remember { mutableStateOf(settings.cardScale) }
@@ -75,6 +76,11 @@ internal fun CarSettingsScreen(settings: Settings, modifier: Modifier) {
                 onChange = { t, l -> themeId = t; layoutId = l; settings.carThemeId = t; settings.carLayoutId = l },
                 onAccent = { accent = it; settings.carAccent = it },
             )
+        }
+        if (themeId == net.prototux.aare.ui.theme.GTS_THEME_ID) item {
+            Choice(stringResource(R.string.setup_choice_gts_font), gtsFontChoices(), if (gtsItalic) "italic" else "upright") {
+                gtsItalic = it == "italic"; settings.gtsItalic = gtsItalic
+            }
         }
         item {
             Choice(stringResource(R.string.setup_choice_animations), animationChoices(), motion) {
